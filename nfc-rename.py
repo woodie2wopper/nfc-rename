@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import flet as ft
 import os
 import wave
@@ -20,6 +21,7 @@ dict_ICR = {
 }
 
 selected_ICR=''
+selected_site=''
 
 
 def convert_epoch_to_string(epoch_time):
@@ -47,7 +49,9 @@ def main(page: ft.Page):
         page.update()
     
 
+
     def open_dlg_modal(e):
+        global selected_site
         # dlg_modalのcontentを動的に生成して更新
         dlg_modal.content = ft.Column([
             ft.Text("サイト名: " + dict_site['サイト名']),
@@ -56,9 +60,23 @@ def main(page: ft.Page):
             #ft.Text("県名: " + dict_site['県名']),
             #ft.Text("市町村: " + dict_site['市町村'])
         ])
+        selected_site = dict_site['サイト名']
         page.dialog = dlg_modal
         dlg_modal.open = True
         page.update()
+        update_site_info()
+
+
+
+    def set_name_site(e=None):
+        #global selected_site
+        #selected_site = dict_site['サイト名']
+        #page.dialog = dlg_modal
+        #dlg_modal.open = True
+        #page.update()
+        update_site_info()
+        name_site.value = selected_site
+        name_site.update()
 
 
     dlg_modal = ft.AlertDialog(
@@ -79,19 +97,18 @@ def main(page: ft.Page):
 
 
     def update_dict_site(key, value):
+        global selected_site
         dict_site[key] = value
+        selected_site = value
         page.update()
+        update_site_info()
 
     def on_dropdown_change(e):
+        global selected_ICR  # selected_ICRをグローバル変数として宣言
         selected_ICR = e.control.value  # 選択されたOptionのvalue属性がキーになります
-        print(f"選択されたICレコーダのキー: {selected_ICR}")
+        # print(f"選択されたICレコーダのキー: {selected_ICR}")
+        update_ICR_info()
 
-    ## file picker
-    #def pick_directory_result(e: ft.FilePickerResultEvent):
-    #    selected_directory.value = (
-    #        ", ".join(map(lambda f: f.name, e.files)) if e.files else "Cancelled!"
-    #    )
-    #    selected_directory.update()
 
     def get_sounds_list(directory):
         # 対象の音声ファイルの拡張子
@@ -127,6 +144,14 @@ def main(page: ft.Page):
         sounds_dir_path.update()
 
 
+    def update_ICR_info():
+        info_selected_ICR.value = selected_ICR
+        info_selected_ICR.update()
+
+
+    def update_site_info():
+        info_selected_site.value = selected_site
+        info_selected_site.update()
 
     def update_sounds_info(list_sounds,directory):
         # 音声ファイルの属性を格納するリスト
@@ -201,7 +226,7 @@ def main(page: ft.Page):
     default_sound_info = f""
     sounds_info_in_directory = ft.TextField(
         text_size=10,
-        label="フォルダ内の音声データ",
+        label="オーディオファイル",
         multiline=True,
         min_lines=4,
         read_only=True,
@@ -212,7 +237,7 @@ def main(page: ft.Page):
     dialogue_output_dir = ft.FilePicker(on_result=get_output_directory)
 
     sounds_info_rename = ft.TextField(
-        label="ファイル名変更：",
+        label="ファイル名変更後：",
         multiline=True,
         min_lines=4,
         read_only=True,
@@ -221,6 +246,18 @@ def main(page: ft.Page):
     )
     page.overlay.append(dialogue_sounds_dir)
     page.overlay.append(dialogue_output_dir)
+
+    name_site = ft.Text()
+
+    info_selected_site = ft.TextField(
+        label = f"録音サイト:{selected_site}",
+        text_size=10,
+        disabled= True)
+
+    info_selected_ICR = ft.TextField(
+        label = f"ICレコーダ:{selected_ICR}",
+        text_size=10,
+        disabled= True)
 
     t = ft.Tabs(
         selected_index=2,
@@ -239,10 +276,15 @@ def main(page: ft.Page):
                         #ft.TextField(label="市町村", value=dict_site['市町村'], on_change=lambda e: update_dict_site('市町村', e.control.value)),
                         #ft.TextField(label="緯度", value=dict_site['緯度'], on_change=lambda e: update_dict_site('緯度', e.control.value)),
                         #ft.TextField(label="経度", value=dict_site['経度'], on_change=lambda e: update_dict_site('経度', e.control.value)),
-
-                        ft.ElevatedButton(
-                            text="確認",
-                            on_click=open_dlg_modal
+                        ft.Row(
+                            [
+                                ft.ElevatedButton(
+                                    text="設定",
+                                    on_click = set_name_site
+                                    ),
+                                ft.Text("ファイル名に用いられるサイト名："),
+                                name_site
+                                ]
                             ),
                     ]),
                 ),
@@ -270,6 +312,10 @@ def main(page: ft.Page):
                 content=ft.Container(
                     margin = 20,
                     content=ft.Column([
+                        ft.Row([
+                            info_selected_site,
+                            info_selected_ICR,
+                        ]),
                         select_sounds_dir,
                         select_output_dir,
                         sounds_info_in_directory,

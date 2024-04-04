@@ -26,14 +26,57 @@ selected_site=''
 
 def convert_epoch_to_string(epoch_time):
     return datetime.fromtimestamp(epoch_time).strftime('%Y-%m-%d %H:%M:%S')
+
+
 def convert_epoch_to_66(epoch_time):
     return datetime.fromtimestamp(epoch_time).strftime('%y%m%d_%H%M%S')
+
+
 def convert_epoch_to_x6(epoch_time):
     return datetime.fromtimestamp(epoch_time).strftime('-%H%M%S')
+
+
 def convert_epoch_to_666(start_epoch, stop_epoch):
     start_66 = convert_epoch_to_66(start_epoch)
     stop_x6  = convert_epoch_to_x6(stop_epoch)
     return start_66 + stop_x6
+
+def get_666(filename,mtime,duration,isStart):
+    if isStart:
+        start_epoch = mtime
+        stop_epoch = mtime + duration
+    else:
+        start_epoch = mtime - duration
+        stop_epoch = mtime
+    body_666 = convert_epoch_to_666(start_epoch,stop_epoch)
+    new_filename = f'{body_666}_{selected_site}_{filename}'
+    return new_filename
+
+    
+
+# 音声ファイルリストから、メタデータとしてファイル名、タイムスタンプとdurationを得る関数
+def get_metadata_sounds(list_sounds,directory):
+    # 音声ファイルの属性を格納するリスト
+    metadata_sounds = []
+    for file in list_sounds:
+        file_stat = os.stat(os.path.join(directory, file))
+        mtime = file_stat.st_mtime
+        with wave.open(os.path.join(directory, file), 'r') as wav_file:
+            duration = wav_file.getnframes() / wav_file.getframerate()
+            metadata_sounds.append({ 'filename': file, 'mtime': mtime, 'duration': duration })
+    return metadata_sounds
+
+
+# 同一の録音をmtimeでグループ化する。中身はmetadata
+def grouping_sounds(metadata_sounds):
+    file_groups = {}  # 辞書として初期化
+    # 連続するファイルでmtimeが同じなら同一録音と判断する
+    for metadata in sorted(metadata_sounds, key=lambda x: x['filename'], reverse=True):
+        mtime = int(metadata['mtime'])
+        if mtime not in file_groups:
+            file_groups[mtime] = []  # 新しいキーに対して空のリストを作成
+        file_groups[mtime].append(metadata)
+    return file_groups
 
 
 def main(page: ft.Page):
@@ -130,18 +173,19 @@ def main(page: ft.Page):
         output_dir_path.update()
 
 
-    def get_sound_directory(e: ft.FilePickerResultEvent):
+    # 指定されたパスから音声ファイルのリストを取得し、情報を更新する
+    def update_sounds_list_and_rename_list(e: ft.FilePickerResultEvent):
         #msg = ""
         list_sounds = []
         if e.path:
-            sounds_dir_path.value = e.path
+            info_sound_dir.value = e.path
             #list_sounds = get_merge_sounds_group(e.path)
             list_sounds = get_sounds_list(e.path)
-            update_sounds_info(list_sounds,sounds_dir_path)
+            update_sounds_info(list_sounds,e.path)
             update_rename_info(list_sounds)
         else:
-            sounds_dir_path.value = "Cancelled!"
-        sounds_dir_path.update()
+            info_sound_dir.value = "Cancelled!"
+        info_sound_dir.update()
 
 
     def update_ICR_info():
@@ -153,51 +197,99 @@ def main(page: ft.Page):
         info_selected_site.value = selected_site
         info_selected_site.update()
 
-    def update_sounds_info(list_sounds,directory):
-        # 音声ファイルの属性を格納するリスト
-        timestamp_sounds = []
-        # 同じmtimeを持っているグループを作成
-        def set_timestamp_sounds_group(timestamp_sounds):
-            msg = ""
-            file_groups = {}
-            prev_mtime = 0
-            prev_start_epoch = 0
-            for timestamp in sorted(timestamp_sounds, key=lambda x: x['filname'], reverse=True):
-                mtime_epoch = timestamp['mtime']
-                mtime_formatted = convert_epoch_to_string(mtime_epoch)
-                #print(f"mtime_epoch: {mtime_epoch}, ファイル名: {timestamp['filname']}")
-                if mtime_epoch not in file_groups:
-                    file_groups[mtime_epoch] = []
-                    # 同一録音グループの条件
-                    if mtime_epoch == prev_mtime:
-                        stop_epoch = prev_start_epoch
-                    else:
-                        stop_epoch = timestamp['mtime']
-                file_groups[mtime_epoch].append(timestamp['filname'])
+    def update_sounds_info(list_sounds, directory):
+        msg = ""
+        file_groups = {}
+        # サウンドファイルのtimestampのリスト作成
+        metadata_sounds = get_metadata_sounds(list_sounds,directory)
+        file_groups = grouping_sounds(metadata_sounds)
+        counter_group = 0
+        for mtime, files in file_groups.items():
+            if len(files) == 1:
+                flag_group = ""
+            else:
+                counter_group +=1
+                flag_group = f"同一音源[{counter_group}]: "
+            # グループ内にファイルが1つだけの場合
+            # 選択されたfiles[0]のfilename, mtime, durationを取得し、isStartを設定する
+            for selected_file in files:
+                filename = selected_file['filename']
+                mtime = selected_file['mtime']
+                duration = selected_file['duration']
+                mtime_formatted = convert_epoch_to_string(mtime)
+                duration_formatted = str(timedelta(seconds=duration))
+                msg += f"{flag_group}{filename}: 変更時刻: {mtime_formatted}, 長さ: {duration_formatted}\n"
+#            selected_file = files[0]
+#            filename = selected_file['filename']
+#            mtime = selected_file['mtime']
+#            duration = selected_file['duration']
+#            #isStart = dict_ICR[selected_ICR] == 'START'
+#            mtime_formatted = convert_epoch_to_string(mtime)
+#            duration_formatted = str(timedelta(seconds=duration))
+#            #new_filename = get_666(filename=filename, mtime=mtime, duration=duration, isStart=isStart)
+#            msg += f"{flag_group}:{filename}: 変更時刻: {mtime_formatted}, 長さ: {duration_formatted}\n"
+#                #new_filename = files
+                    
+        #    prev_mtime = 0
+        #    prev_start_epoch = 0
+        #    # 連続するファイルでmtimeが同じなら同一録音と判断する
+        #    for timestamp in sorted(metadata_sounds, key=lambda x: x['filname'], reverse=True):
+        #        isGroup = False
+        #        mtime_epoch = timestamp['mtime']
+        #        mtime_formatted = convert_epoch_to_string(mtime_epoch)
+        #        #print(f"mtime_epoch: {mtime_epoch}, ファイル名: {timestamp['filname']}")
+        #        if mtime_epoch not in file_groups:
+        #            file_groups[mtime_epoch] = []
+        #            # 同一録音グループの条件
+        #            if mtime_epoch == prev_mtime:
+        #                stop_epoch = prev_start_epoch
+        #                isGroup = True
+        #            else:
+        #                stop_epoch = timestamp['mtime']
+        #        file_groups[mtime_epoch].append(timestamp['filname'])
 
-                duration = timestamp['duration']
-                start_epoch = stop_epoch - duration
-                duration_formatted = str(timedelta(seconds=timestamp['duration']))
-                start_formatted = convert_epoch_to_string(start_epoch)
-                stop_formatted = convert_epoch_to_string(stop_epoch)
-                msg += f" {timestamp['filname']}: 変更時刻: {mtime_formatted}, 長さ: {duration_formatted}\n"
-                # 一つ前を記憶する
-                prev_mtime = mtime_epoch
-                prev_start_epoch = start_epoch
-            return msg
-        for file in list_sounds:
-            file_stat = os.stat(os.path.join(directory.value, file))
-            file_timestamp = file_stat.st_mtime
-            with wave.open(os.path.join(directory.value, file), 'r') as wav_file:
-                duration = wav_file.getnframes() / wav_file.getframerate()
-                timestamp_sounds.append({ 'filname': file, 'mtime': file_timestamp, 'duration': duration })
-        msg = set_timestamp_sounds_group(timestamp_sounds)
+        #        duration = timestamp['duration']
+        #        start_epoch = stop_epoch - duration
+        #        duration_formatted = str(timedelta(seconds=timestamp['duration']))
+        #        start_formatted = convert_epoch_to_string(start_epoch)
+        #        stop_formatted = convert_epoch_to_string(stop_epoch)
+        #        if isGroup:
+        #            msg += f" G:{timestamp['filname']}: 変更時刻: {mtime_formatted}, 長さ: {duration_formatted}\n"
+        #        else:
+        #            msg += f" {timestamp['filname']}: 変更時刻: {mtime_formatted}, 長さ: {duration_formatted}\n"
+
+        #        # 一つ前を記憶する
+        #        prev_mtime = mtime_epoch
+        #        prev_start_epoch = start_epoch
+        #return msg
+
+        def set_grouped_sound(file_groups):
+            # 同じmtimeを持つファイルをリスト化して返す
+            def group_files_by_mtime(file_groups):
+                grouped_files = {}
+                for mtime, files in file_groups.items():
+                    if mtime not in grouped_files:
+                        grouped_files[mtime] = []
+                    # grouped_files[mtime]リストにfilesリストの要素を追加している
+                    grouped_files[mtime].extend(files)
+                return grouped_files
+
+            grouped_files = group_files_by_mtime(file_groups)
+            return grouped_files
+
+        #msg = set_metadata_sounds_group(metadata_sounds)
         sounds_info_in_directory.value = msg
         sounds_info_in_directory.update()
+        grouped_sound = set_grouped_sound(file_groups)
+        print(grouped_sound)
 
 
 
-    def update_rename_info(msg):
+    def update_rename_info(list_sounds):
+        msg=""
+        for file in list_sounds:
+            print(file)  # ここでfile変数を使用する処理を行う
+            msg += file
         sounds_info_rename.value = msg
         sounds_info_rename.update()
     #pick_directory_dialog = ft.FilePicker(
@@ -205,14 +297,14 @@ def main(page: ft.Page):
     #    pick_directories=True
     #)
     #selected_directory = ft.Text()
-    sounds_dir_path = ft.Text(size=10)
+    info_sound_dir = ft.Text(size=10)
     select_sounds_dir= ft.Row([
                                 ft.ElevatedButton(
                                     "音声フォルダ選択",
                                     icon=ft.icons.SNIPPET_FOLDER,
                                     on_click=lambda _: dialogue_sounds_dir.get_directory_path(),
                                 ),
-                                sounds_dir_path,
+                                info_sound_dir,
                         ])
     output_dir_path = ft.Text(size=10)
     select_output_dir= ft.Row([
@@ -233,7 +325,7 @@ def main(page: ft.Page):
         max_lines=None,
         value=default_sound_info,
     )
-    dialogue_sounds_dir = ft.FilePicker(on_result=get_sound_directory)
+    dialogue_sounds_dir = ft.FilePicker(on_result=update_sounds_list_and_rename_list)
     dialogue_output_dir = ft.FilePicker(on_result=get_output_directory)
 
     sounds_info_rename = ft.TextField(
@@ -251,12 +343,12 @@ def main(page: ft.Page):
 
     info_selected_site = ft.TextField(
         label = f"録音サイト:{selected_site}",
-        text_size=10,
+        text_size=14,
         disabled= True)
 
     info_selected_ICR = ft.TextField(
         label = f"ICレコーダ:{selected_ICR}",
-        text_size=10,
+        text_size=14,
         disabled= True)
 
     t = ft.Tabs(
@@ -307,11 +399,16 @@ def main(page: ft.Page):
                 ),
             ),
             ft.Tab(
-                text="rename to 666",
+                text="リネーム to 666",
                 icon=ft.icons.DRIVE_FILE_MOVE_OUTLINE,
                 content=ft.Container(
                     margin = 20,
                     content=ft.Column([
+                        ft.Text("""DM-750で長時間録音されファイルサイズが2GBを超えると自動で分割されます。
+                                分割されたファイルは同じタイムスタンプを持つため、そのままファイル名を666形式にすると実際と異なった時刻を示すことになります。
+                                そのため、分割されたファイルを一つのファイルに統合し、666形式にリネームされます。
+                                【条件：連続したファイルでmtimeが同じなら同一音源である】
+                                """),
                         ft.Row([
                             info_selected_site,
                             info_selected_ICR,

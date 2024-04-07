@@ -144,8 +144,6 @@ def get_duration_of_sound(file):
 
 
 
-
-
 def main(page: ft.Page):
     page.title="nfc-rename"
     def update_dict_site(key, value):
@@ -318,53 +316,21 @@ def main(page: ft.Page):
             # mtimeを人が読める形式に変換
             readable_mtime = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
             filelist_remtime.append(file.path)
-            selected_files_mtime.append(f"{file.name}: {readable_mtime}")
+            selected_files_mtime.append(f"{readable_mtime}: {file.name}")
 
         info_modify_files.value = '\n'.join(selected_files_mtime)
         info_modify_files.update()
 
 
-    def update_info_date_picked(e):
-        date_picked.value = e.control.value.strftime('%Y-%m-%d')
-#        date_picked.value = dialogue_date_picker.value
+    def datebox_change(e):
+        date_picked.value = e.control.value
         date_picked.update()
 
-    def update_info_time_picked(e):
-        time_picked.value = dialogue_time_picker.value
+
+    def timebox_change(e):
+        time_picked.value = e.control.value
         time_picked.update()
 
-    def change_date(e):
-        print(f"Date picker changed, value is {dialogue_date_picker.value}")
-
-    def date_picker_dismissed(e):
-        print(f"Date picker dismissed, value is {dialogue_date_picker.value}")
-
-    def time_picker_dismissed(e):
-        print(f"Date picker dismissed, value is {dialogue_time_picker.value}")
-
-    def change_time():
-        # `dialogue_time_picker.value` が `None` でないことを確認
-        if dialogue_time_picker.value:
-            print(f"Time picker changed, value (minute) is {dialogue_time_picker.value.minute}")
-        else:
-            print("Time picker value is None")
- 
-    dialogue_time_picker = ft.TimePicker(
-        confirm_text="Confirm",
-        error_invalid_text="Time out of range",
-        help_text="Pick your time slot",
-        on_change=change_time,
-        on_dismiss=time_picker_dismissed,
-    )
-    dialogue_date_picker = ft.DatePicker(
-        on_change=change_date,
-        on_dismiss=date_picker_dismissed,
-    )
-
-    dialogue_time_picker = ft.TimePicker(
-        on_change=update_info_date_picked,
-        on_dismiss=time_picker_dismissed,
-    )
 
     dialogue_confirm_to_rename = ft.AlertDialog(
         title=ft.Text("リネームの確認"),
@@ -417,8 +383,6 @@ def main(page: ft.Page):
     dialogue_sounds_dir = ft.FilePicker(on_result=update_sounds_list_and_rename_list)
     dialogue_output_dir = ft.FilePicker(on_result=get_output_directory)
     dialogue_modify_mtime_file = ft.FilePicker(on_result=update_info_modify_mtime_files)
-    dialogue_date_picker = ft.DatePicker(on_change=update_info_date_picked)
-    dialogue_time_picker = ft.TimePicker(on_change=update_info_time_picked)
 
     renamed_info = ft.TextField(
         text_size=10,
@@ -449,9 +413,9 @@ def main(page: ft.Page):
 
     
     status_rename = ft.Text(size=10)
-    status_remtime = ft.TextField(
+    info_modified_mtime = ft.TextField(
         text_size=10,
-        label="message",
+        label="変更結果",
         multiline=True,
         min_lines=4,
         read_only=True,
@@ -471,25 +435,25 @@ def main(page: ft.Page):
         tz_info = timezone(timedelta(hours=9))
 
         if not filelist_remtime:
-            status_remtime.value = "mtimeを変更するファイルが選択されていません。"
-            status_remtime.update()
+            info_modified_mtime.value = "mtimeを変更するファイルが選択されていません。"
+            info_modified_mtime.update()
             return
 
         # 日付と時刻が設定されているか確認
         if not date_picked.value or not time_picked.value:
-            status_remtime.value = "日付または時刻が設定されていません。"
-            status_remtime.update()
+            info_modified_mtime.value = "日付または時刻が設定されていません。"
+            info_modified_mtime.update()
             return
 
-        # date_pickedとtime_pickedからタイムゾーンTZ=9でエポック秒に変換
+        # date_picked とtime_picked からタイムゾーンTZ=9でエポック秒に変換
         datetime_str = f"{date_picked.value} {time_picked.value}"
         try:
             datetime_obj = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
             datetime_obj = datetime_obj.replace(tzinfo=tz_info)
             epoch_seconds = int(datetime_obj.timestamp())
         except ValueError as e:
-            status_remtime.value = f"日付または時刻の形式が正しくありません: {e}"
-            status_remtime.update()
+            info_modified_mtime.value = f"日付または時刻の形式が正しくありません: {e}"
+            info_modified_mtime.update()
             return
 
         # 選択されたファイルのmtimeを変更
@@ -499,16 +463,15 @@ def main(page: ft.Page):
             if file_path:  # 空の行を無視
                 try:
                     datetime_from_epoch = datetime.fromtimestamp(epoch_seconds, tz_info)
-                    # mtimeを変更
                     os.utime(file_path, (datetime_from_epoch.timestamp(), datetime_from_epoch.timestamp()))
-                    #os.utime(file_path, (datetime_obj, datetime_obj))
-                    msg += f"{file_path} のmtimeを更新しました。\n"
+                    file_name = os.path.basename(file_path)
+                    msg += f"{file_name} のmtimeを更新しました。\n"
                 except FileNotFoundError:
                     msg += f"{file_path} が見つかりません。\n"
                 except Exception as e:
                     msg += f"エラーが発生しました: {e}\n"
-        status_remtime.value = msg
-        status_remtime.update()
+        info_modified_mtime.value = msg
+        info_modified_mtime.update()
 
 
     # ダイアローグの追加                
@@ -516,13 +479,11 @@ def main(page: ft.Page):
     page.overlay.append(dialogue_output_dir)
     page.overlay.append(dialogue_confirm_to_rename)
     page.overlay.append(dialogue_modify_mtime_file)
-    page.overlay.append(dialogue_date_picker)
-    page.overlay.append(dialogue_time_picker)
 
     # タイムスタンプの設定関係
     info_modify_files = ft.TextField(
         text_size=10,
-        label="選択ファイル:",
+        label="選択ファイル：",
         multiline=True,
         min_lines=4,
         read_only=True,
@@ -617,29 +578,33 @@ def main(page: ft.Page):
                         ]),
                         info_modify_files,
                         ft.Row([
-                            ft.ElevatedButton(
-                                "date",
-                                icon=ft.icons.CALENDAR_MONTH,
-                                on_click=lambda _: dialogue_date_picker.pick_date()
+                            ft.TextField(
+                                label="日付入力",
+                                hint_text="2024-04-01",
+                                icon=ft.icons.CALENDAR_MONTH_OUTLINED,
+                                multiline=False,
+                                on_change=datebox_change,
                             ),
                             date_picked,
                         ]),
                         ft.Row([
-                            ft.ElevatedButton(
-                                "time",
-                                icon=ft.icons.WATCH_LATER_OUTLINED,
-                                on_click=lambda _: dialogue_time_picker.pick_time()
+                            ft.TextField(
+                                label="時刻入力",
+                                hint_text="01:23:45",
+                                icon=ft.icons.ACCESS_TIME,
+                                multiline=False,
+                                on_change=timebox_change,
                             ),
                             time_picked
                         ]),
                         ft.Row([
                             ft.ElevatedButton(
-                                "時刻変更",
+                                "時刻入力",
                                 icon=ft.icons.EMOJI_EMOTIONS,
                                 on_click=lambda _: change_mtime_for_selected_files()
                             ),
-                            status_remtime
-                        ])
+                        ]),
+                        info_modified_mtime
                     ])
                 ),
             ),

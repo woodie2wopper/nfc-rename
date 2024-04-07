@@ -4,6 +4,7 @@ import os
 import pathlib
 import wave
 from datetime import timezone, datetime, timedelta
+import re
 
 
 # 録音サイトのメタデータを格納するグローバル変数
@@ -34,6 +35,7 @@ dir_sounds="" # 音声ディレクトリ
 dir_output="" # 変換後の出力ディレクトリ
 list_rename={} # リネームするファイル辞書
 file_groups={} # 同一音源のファイル辞書
+filelist_recover=[] # recoverを変更するファイルリスト
 filelist_remtime=[] # mtimeを変更するファイルリスト
 
 
@@ -58,6 +60,46 @@ def get_666(filename,start_epoch,stop_epoch,name_site):
     body_666 = convert_epoch_to_666(start_epoch,stop_epoch)
     new_filename = f'{body_666}_{name_site}_{filename}'
     return new_filename
+
+def recover_filename(filename):
+    # "_"で区切られたファイル名を分割する
+    parts = filename.split('_')
+    # 最初の4つの部分を削除する
+    recovered_parts = parts[4:]
+    # 残りの部分を"_"で結合して返す
+    recovered_filename = '_'.join(recovered_parts)
+    return recovered_filename
+
+def split_filename(filename):
+    # "_"で区切られたファイル名を分割する
+    parts = filename.split('_')
+    # 最初の要素をdate_str、２番目をstart_time,３番目をstop_timeに分ける
+    if len(parts) >= 3:
+        date_str = parts[0]
+        start_time = parts[1]
+        stop_time = parts[2]
+        return date_str, start_time, stop_time
+
+def get_start_stop_from_666(filename):
+    # 666形式のファイル名から開始と終了のエポックタイムを抽出する正規表現
+    pattern = r'(\d{6})_(\d{6})_(\d{6})_'
+    match = re.search(pattern, filename)
+    if match:
+        date_str, start_time, stop_time = split_filename(filename)
+        start_str = f"{date_str}_{start_time}"
+        stop_str = f"{date_str}_{stop_time}"
+        # 日付と時刻の文字列をdatetimeオブジェクトに変換
+        start_dt = datetime.strptime(start_str, '%y%m%d_%H%M%S')
+        stop_dt = datetime.strptime(stop_str, '%y%m%d_%H%M%S')
+        # datetimeオブジェクトからエポックタイムに変換
+        start_epoch = int(start_dt.timestamp())
+        stop_epoch = int(stop_dt.timestamp())
+        if stop_epoch < start_epoch:
+            stop_epoch += 12 * 60 * 60  # 12時間を秒数で足す
+        return start_epoch, stop_epoch
+    else:
+        raise ValueError(" ファイル名が666形式ではありません。")
+
 
 def check_filename_format(filename):
     import re
@@ -123,7 +165,6 @@ def merge_and_rename_audio_files(file_groups, output_file):
         # ファイル名をソートして順番に読み込み出力ファイルに追記する
         sorted_file_list = sorted(file_groups)
         for file in sorted_file_list:
-            print(f'ファイルのマージ：{file} :-> append {output_file}')
             with wave.open(file, 'rb') as input_wave:
                 # パラメータの互換性を確認
                 if input_wave.getparams() != output_params:
@@ -233,7 +274,6 @@ def main(page: ft.Page):
         str_group = ""
         counter_group = 0
         for mtime, files in file_groups.items():
-            print(mtime)
             if len(files) == 1:
                 str_group = ""
             else:
@@ -273,7 +313,6 @@ def main(page: ft.Page):
 
 
     def rename(from_filename, to_filename):
-        print(f"{from_filename} :-> {to_filename}")
         # ファイル名をfrom_filenameからto_filenameに変更する関数
         try:
             # os.rename(from_filename, to_filename)
@@ -320,6 +359,75 @@ def main(page: ft.Page):
 
         info_modify_files.value = '\n'.join(selected_files_mtime)
         info_modify_files.update()
+
+
+    def update_info_recover_filename(e: ft.FilePickerResultEvent):
+        filenames_recover = []
+        # 選択したファイルのmtimeを取得し、人が読める形式でmtime_of_selected_file.valueに設定
+        selected_files = []
+        for file in e.files:
+            filenames_recover.append(file.path)
+            # ファイルのmtimeを取得
+            mtime = os.path.getmtime(file.path)
+            # mtimeを人が読める形式に変換
+            readable_mtime = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+            selected_files.append(f"{readable_mtime} {file.name}")
+        
+        info_recover_filename.value = '\n'.join(selected_files)
+        info_recover_filename.update()
+
+        # 復元後のファイル名表示
+        update_status_recover(filenames_recover)
+
+
+    def update_status_recover(filenames_recover):
+        global filelist_recover
+        # status_recoverに表示するメッセージを初期化
+        status_messages = []
+        selected_files = []
+        for file_path in filenames_recover:
+            filename = os.path.basename(file_path)
+            # 666形式のファイル名かどうかをチェックする正規表現パターン
+            pattern = r'^\d{6}_\d{6}_\d{6}_.*$'
+            # 正規表現でファイル名がパターンにマッチするかチェック
+            try:
+                if re.match(pattern, filename):
+                    recovered_filename = recover_filename(filename)
+                    recovered_path = os.path.join(os.path.dirname(file_path), recovered_filename)
+                else:
+                    raise ValueError("ファイル名が666形式ではありません。")
+
+                if not is_set_ICR():
+                    raise ValueError( "ICレコーダが選択されていないか、無効な値です")
+
+                # ファイル名からstart_epochとstop_epochを取得
+                start_epoch, stop_epoch = get_start_stop_from_666(filename)
+                # dict_ICRの値に基づいてmtimeをstart_epochまたはstop_epochに設定
+                if dict_ICR[selected_ICR] == 'START':
+                    mtime = start_epoch
+                elif dict_ICR[selected_ICR] == 'STOP':
+                    mtime = stop_epoch
+                else:
+                    raise ValueError("ICレコーダが選択されていません")
+
+                # 取得したタイムスタンプを人が読める形式に変換
+                readable_mtime = convert_epoch_to_string(mtime)
+                # 復元したファイル名とタイムスタンプをリストに追加
+                selected_files.append(f"{readable_mtime}: {recovered_filename}")
+                filelist_recover.append({
+                    'mtime': mtime,
+                    'recover_path': recovered_path,
+                    'filename': filename,
+                    'file_path': file_path
+                })
+            except ValueError as ve:
+                status_messages.append(f"エラー: {ve}")
+
+        if status_messages:
+            status_recover.value = '\n'.join(status_messages)
+        else:
+            status_recover.value = '\n'.join(selected_files)
+        status_recover.update()
 
 
     def datebox_change(e):
@@ -383,6 +491,7 @@ def main(page: ft.Page):
     dialogue_sounds_dir = ft.FilePicker(on_result=update_sounds_list_and_rename_list)
     dialogue_output_dir = ft.FilePicker(on_result=get_output_directory)
     dialogue_modify_mtime_file = ft.FilePicker(on_result=update_info_modify_mtime_files)
+    dialogue_recover_filename = ft.FilePicker(on_result=update_info_recover_filename)
 
     renamed_info = ft.TextField(
         text_size=10,
@@ -396,7 +505,7 @@ def main(page: ft.Page):
 
 
     name_site = ft.Text()
-    name_ICR = ft.Text()
+    name_ICR = ft.Text(size=10)
 
     info_selected_site = ft.TextField(
         label = f"録音サイト:{selected_site}",
@@ -423,12 +532,54 @@ def main(page: ft.Page):
         value="",
         )
 
+    status_recover = ft.TextField(
+        text_size=10,
+        label="メッセージ：",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value="",
+        )
 
-    # リネーム実行ボタンのイベントハンドラを修正
-    def btn_extract_on_click(_):
+    status_recover_result = ft. Text(size=10)
+
+    # リネーム実行ボタンのイベントハンドラ
+    def btn_extract_rename(_):
         if is_set_site() and is_set_ICR():
             dialogue_confirm_to_rename.open = True  # AlertDialogを開く
             page.update()
+
+
+    # ファイル名復元実行ボタンのイベントハンドラ
+    def btn_extract_recover(_):
+        global filelist_recover
+        status_messages = []
+        new_filename = []
+
+        for file_info in filelist_recover:
+            try:
+                prev_file_path = file_info['file_path']
+                # ソースファイルの存在を確認
+                if not os.path.exists(prev_file_path):
+                    raise ValueError(f"ファイルが存在しません: {prev_file_path}")
+
+                mtime = file_info['mtime']
+                recover_file_path = file_info['recover_path']
+                # new_filenameをnew_pathから生成するコード
+                new_filename.append(os.path.basename(recover_file_path))
+                # prev_filenameをnew_filenameにリネームするコード
+                os.rename(prev_file_path, recover_file_path)
+                # mtimeをタイムスタンプに変換し、ファイルのmtimeを設定
+                os.utime(recover_file_path, (mtime, mtime))
+            except ValueError as e:
+                status_messages.append(f"ファイル名の更新中にエラーが発生しました: {e}")
+
+        if new_filename:
+            status_recover_result.value =  "復元成功: " + '\n'.join(new_filename) 
+        else:
+            status_recover_result.value = '\n'.join(status_messages)
+        status_recover_result.update()
 
 
     def change_mtime_for_selected_files():
@@ -459,7 +610,6 @@ def main(page: ft.Page):
         # 選択されたファイルのmtimeを変更
         msg = ""
         for file_path in filelist_remtime:
-            print(file_path)
             if file_path:  # 空の行を無視
                 try:
                     datetime_from_epoch = datetime.fromtimestamp(epoch_seconds, tz_info)
@@ -479,9 +629,19 @@ def main(page: ft.Page):
     page.overlay.append(dialogue_output_dir)
     page.overlay.append(dialogue_confirm_to_rename)
     page.overlay.append(dialogue_modify_mtime_file)
+    page.overlay.append(dialogue_recover_filename)
 
     # タイムスタンプの設定関係
     info_modify_files = ft.TextField(
+        text_size=10,
+        label="選択ファイル：",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value=""
+    )
+    info_recover_filename = ft.TextField(
         text_size=10,
         label="選択ファイル：",
         multiline=True,
@@ -548,7 +708,7 @@ def main(page: ft.Page):
                             ft.ElevatedButton(
                                 "リネーム実行",
                                 icon=ft.icons.EMOJI_EMOTIONS,
-                                on_click=btn_extract_on_click,  # 修正したイベントハンドラを使用
+                                on_click=btn_extract_rename,  # 修正したイベントハンドラを使用
                             ),
                             status_rename,
                         ]),
@@ -556,9 +716,40 @@ def main(page: ft.Page):
                 ),
             ),
             ft.Tab(
-                text="recover from 666",
+                text="ファイル名復元",
                 icon=ft.icons.DRIVE_FILE_MOVE_RTL_OUTLINED,
-                content=ft.Text("under constructing"),
+                content=ft.Container(
+                    margin=20,
+                    content=ft.Column([
+                        ft.Text("666形式のファイル名から元のファイル名に復元します。タイムスタンプが開始か終了かはICレコーダの選択で変わります。"),
+                        ft.Dropdown(
+                            label = "IC Recorder",
+                            hint_text="録音したICレコーダを選択してください。用いるデータはタイムスタンプが開始(START)か終了(STOP)です。",
+                            options = dropdown_options,
+                            on_change=on_dropdown_change
+                        ),
+                        name_ICR,
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "ファイル選択",
+                                icon=ft.icons.AUDIO_FILE_OUTLINED,
+                                on_click=lambda _: dialogue_recover_filename.pick_files(
+                                    allow_multiple=True
+                                ),
+                            ),
+                        ]),
+                        info_recover_filename,
+                        status_recover,
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "復元実行",
+                                icon=ft.icons.EMOJI_EMOTIONS,
+                                on_click=btn_extract_recover,  # 修正したイベントハンドラを使用
+                            ),
+                            status_recover_result
+                        ]),
+                    ])
+                ),
             ),
             ft.Tab(
                 text="タイムスタンプ変更",

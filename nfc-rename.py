@@ -2,7 +2,8 @@
 import flet as ft
 import os
 import pathlib
-import wave
+#import wave
+import soundfile as sf
 from datetime import timezone, datetime, timedelta
 import re
 
@@ -23,20 +24,22 @@ dict_ICR = {
 
 msg_rename="""\
 【使い方】
-　サイトとICレコーダを選択 > 音声フォルダの選択 > 出力フォルダを選択 > 確認後、リネーム実行
+　サイト名入力＋ICレコーダ選択 > 録音フォルダ選択 > 出力フォルダ選択 > 確認後、リネーム実行
 【注意】
 　- ICレコーダを変更したら、ディレクトリを選び直してください
+　- ⭕️は同一音源と思われます
 　- ✅は666リネーム済みでリネームしません
 　- 同一録音はマージされます（ DM-750では長時間録音は自動分割され同じタイムスタンプを持つためファイル統合します。）
 """
 selected_ICR=''
-selected_site=''
+name_site=''
 dir_sounds="" # 音声ディレクトリ
 dir_output="" # 変換後の出力ディレクトリ
 list_rename={} # リネームするファイル辞書
-file_groups={} # 同一音源のファイル辞書
+metadata_group={} # 同一音源のメタデータ（filename、mtime、is666、file_pathとか）
 filelist_recover=[] # recoverを変更するファイルリスト
 filelist_remtime=[] # mtimeを変更するファイルリスト
+pattern = r'(\d{6})_(\d{6})[_-](\d{6})_'
 
 
 def convert_epoch_to_string(epoch_time):
@@ -48,7 +51,7 @@ def convert_epoch_to_66(epoch_time):
 
 
 def convert_epoch_to_x6(epoch_time):
-    return datetime.fromtimestamp(epoch_time).strftime('-%H%M%S')
+    return datetime.fromtimestamp(epoch_time).strftime('_%H%M%S')
 
 
 def convert_epoch_to_666(start_epoch, stop_epoch):
@@ -56,10 +59,16 @@ def convert_epoch_to_666(start_epoch, stop_epoch):
     stop_x6  = convert_epoch_to_x6(stop_epoch)
     return start_66 + stop_x6
 
-def get_666(filename,start_epoch,stop_epoch,name_site):
+def get_666(filename,start_epoch,stop_epoch,name_site_str):
     body_666 = convert_epoch_to_666(start_epoch,stop_epoch)
-    new_filename = f'{body_666}_{name_site}_{filename}'
+    new_filename = f'{body_666}_{name_site_str}_{filename}'
     return new_filename
+
+        
+def show_message(instance_text,msg):
+    instance_text.value = msg
+    instance_text.update()
+
 
 def recover_filename(filename):
     # "_"で区切られたファイル名を分割する
@@ -82,7 +91,8 @@ def split_filename(filename):
 
 def get_start_stop_from_666(filename):
     # 666形式のファイル名から開始と終了のエポックタイムを抽出する正規表現
-    pattern = r'(\d{6})_(\d{6})_(\d{6})_'
+    global pattern
+    #pattern = r'(\d{6})_(\d{6})[_-](\d{6})_'
     match = re.search(pattern, filename)
     if match:
         date_str, start_time, stop_time = split_filename(filename)
@@ -101,37 +111,24 @@ def get_start_stop_from_666(filename):
         raise ValueError(" ファイル名が666形式ではありません。")
 
 
+# 正規表現でファイル名がパターンにマッチするかチェック
 def check_filename_format(filename):
     import re
-    # 6桁の数字とアンダースコアで区切られた形式にマッチする正規表現パターン
-    pattern = r'^\d{6}_\d{6}[_-]\d{6}_.*'
-    # 正規表現でファイル名がパターンにマッチするかチェック
+    global pattern
     return bool(re.match(pattern, filename))
-
-# 音声ファイルリストから、メタデータとしてファイル名、タイムスタンプとdurationを得る関数
-def get_metadata_sounds(list_sounds,directory):
-    # 音声ファイルの属性を格納するリスト
-    metadata_sounds = []
-    for file in list_sounds:
-        file_stat = os.stat(os.path.join(directory, file))
-        mtime = file_stat.st_mtime
-        with wave.open(os.path.join(directory, file), 'r') as wav_file:
-            duration = wav_file.getnframes() / wav_file.getframerate()
-            metadata_sounds.append({ 'filename': file, 'mtime': mtime, 'duration': duration })
-    return metadata_sounds
 
 
 # 同一の録音をmtimeでグループ化する。中身はmetadata
 def grouping_sounds(metadata_sounds):
-    global file_groups
+    global metadata_group
     # 連続するファイルでmtimeが同じなら同一録音と判断する
     for metadata in sorted(metadata_sounds, key=lambda x: x['filename'], reverse=True):
         # mtimeを四捨五入する
         mtime = round(metadata['mtime'])
-        if mtime not in file_groups:
-            file_groups[mtime] = []  # 新しいキーに対して空のリストを作成
-        file_groups[mtime].append(metadata)
-    return file_groups
+        if mtime not in metadata_group:
+            metadata_group[mtime] = []  # 新しいキーに対して空のリストを作成
+        metadata_group[mtime].append(metadata)
+    return metadata_group
 
 
 # ICRが設定されているか？
@@ -145,17 +142,17 @@ def is_set_ICR():
 
 # siteが設定されているか？
 def is_set_site():
-    return bool(selected_site)
+    return bool(name_site)
 
 
 # 複数の音声ファイルを結合する関数
-def merge_and_rename_audio_files(file_groups, output_file):
+def merge_and_rename_audio_files(metadata_group, output_file):
     # ファイルリストが空かどうかを確認
-    if not file_groups:
+    if not metadata_group:
         raise ValueError("ファイルリストが空です。")
 
     # 最初のファイルを出力ファイルとして開く
-    with wave.open(file_groups[0], 'rb') as wave_file:
+    with wave.open(metadata_group[0], 'rb') as wave_file:
         output_params = wave_file.getparams()
 
     # 出力ファイルを作成
@@ -163,7 +160,8 @@ def merge_and_rename_audio_files(file_groups, output_file):
         output_wave.setparams(output_params)
 
         # ファイル名をソートして順番に読み込み出力ファイルに追記する
-        sorted_file_list = sorted(file_groups)
+        sorted_file_list = sorted(metadata_group)
+        print(f'sorted_file_list:{sorted_file_list}')
         for file in sorted_file_list:
             with wave.open(file, 'rb') as input_wave:
                 # パラメータの互換性を確認
@@ -187,12 +185,96 @@ def get_duration_of_sound(file):
 
 def main(page: ft.Page):
     page.title="nfc-rename"
-    def update_dict_site(key, value):
-        global selected_site
-        dict_site[key] = value
-        selected_site = value
-        page.update()
-        update_site_info()
+    page.window_width=800
+    page.window_height=1000
+    #def update_dict_site(key, value):
+    #    global selected_site
+    #    dict_site[key] = value
+    #    selected_site = value
+    #    page.update()
+    #    update_site_info()
+
+    # flet関連
+    status_rename_result = ft.Text(size=10)
+    info_sound_dir = ft.Text(size=10)
+    output_dir_path = ft.Text(size=10)
+    name_ICR = ft.Text(size=10)
+
+    btn_sounds_dir = ft.Row([
+        ft.ElevatedButton(
+            "音声フォルダ",
+            icon=ft.icons.FOLDER,
+            on_click=lambda _: dialogue_sounds_dir.get_directory_path(),
+        ),
+        info_sound_dir,
+    ])
+
+    btn_output_dir = ft.Row([
+        ft.ElevatedButton(
+            "出力フォルダ",
+            icon=ft.icons.FOLDER,
+            on_click=lambda _: dialogue_output_dir.get_directory_path(),
+        ),
+        output_dir_path,
+    ])
+
+    sound_info = ft.TextField(
+        text_size=10,
+        label="オーディオファイル:",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value=""
+    )
+
+
+    renamed_info = ft.TextField(
+        text_size=10,
+        label="メッセージ：",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value="",
+    )
+
+    info_name_site = ft.Text(size=10)
+    info_selected_ICR = ft.Text(size=10)
+
+    # dict_ICRから動的に生成する。
+    dropdown_options = [ft.dropdown.Option(key) for key, value in dict_ICR.items()]
+
+    
+    info_modified_mtime = ft.TextField(
+        text_size=10,
+        label="変更結果",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value="",
+        )
+
+    status_recover = ft.TextField(
+        text_size=10,
+        label="メッセージ：",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value="",
+        )
+
+    status_recover_result = ft. Text(size=10)
+
+
+    def changed_name_site(e):
+        global name_site
+        name_site=e.control.value
+        info_name_site.value = name_site
+        info_name_site.update()
+
 
     def on_dropdown_change(e):
         global selected_ICR  # selected_ICRをグローバル変数として宣言
@@ -219,24 +301,33 @@ def main(page: ft.Page):
             output_dir_path.value = "Cancelled!"
         output_dir_path.update()
 
-    def get_renamed_sounds(files_in_same_groups, isStart):
-        filename = files_in_same_groups[0]['filename']
-        mtime = files_in_same_groups[0]['mtime']
-        total_duration = sum(file['duration'] for file in files_in_same_groups)
-        start_epoch, stop_epoch = (mtime, mtime + total_duration) if isStart else (mtime - total_duration, mtime)
-        new_filename = get_666(filename, start_epoch, stop_epoch, selected_site)
+    def get_renamed_sound(metadata_sound, isStart):
+        global name_site
+        filename = metadata_sound['filename']
+        mtime = metadata_sound['mtime']
+        duration = metadata_sound['duration']
+        start_epoch, stop_epoch = (mtime, mtime + duration) if isStart else (mtime - duration, mtime)
+        new_filename = get_666(filename, start_epoch, stop_epoch, name_site)
+        return new_filename
 
+
+    def get_renamed_sounds(metadata_in_same_groups, isStart):
+        global name_site
+        filename = metadata_in_same_groups[0]['filename']
+        mtime = metadata_in_same_groups[0]['mtime']
+        total_duration = sum(file['duration'] for file in metadata_in_same_groups)
+        start_epoch, stop_epoch = (mtime, mtime + total_duration) if isStart else (mtime - total_duration, mtime)
+        new_filename = get_666(filename, start_epoch, stop_epoch, name_site)
         return new_filename
 
     # ファイル名の変更に関する情報を更新する関数
-    def update_rename_info(file_groups):
+    def update_rename_info(metadata_group):
         msg=""
         isStart = None
-        
 
         if is_set_site() & is_set_ICR() :
             isStart = dict_ICR[selected_ICR] == 'START'
-            for mtime, files in file_groups.items():
+            for mtime, files in metadata_group.items():
                 # ファイル名が既にフォーマットされている場合は処理をスキップ
                 if not check_filename_format(files[0]['filename']):
                     if len(files) == 1:
@@ -255,30 +346,30 @@ def main(page: ft.Page):
     
 
     def update_ICR_info(e=None):
-        name_ICR.value = f'ICレコーダー[{selected_ICR}] タイムスタンプ：{dict_ICR[selected_ICR]}'
-        name_ICR.update()
-        info_selected_ICR.value = f'{selected_ICR}: {dict_ICR[selected_ICR]}'
+        #name_ICR.value = f'ICレコーダー[{selected_ICR}] タイムスタンプ：{dict_ICR[selected_ICR]}'
+        #name_ICR.update()
+        info_selected_ICR.value = f'{dict_ICR[selected_ICR]}'
         info_selected_ICR.update()
 
 
-    def update_site_info(e=None):
-        name_site.value = f'ファイル名に追加されるサイト名：{selected_site}'
-        name_site.update()
-        info_selected_site.value = selected_site
-        info_selected_site.update()
+    #def update_site_info(e=None):
+    #    name_site.value = f'ファイル名に追加されるサイト名：{selected_site}'
+    #    name_site.update()
+    #    info_selected_site.value = selected_site
+    #    info_selected_site.update()
 
 
-    def update_sounds_info(file_groups):
+    def update_sounds_info(metadata_group):
         msg = ""
         str_666 =""
         str_group = ""
         counter_group = 0
-        for mtime, files in file_groups.items():
+        for mtime, files in metadata_group.items():
             if len(files) == 1:
                 str_group = ""
             else:
                 counter_group +=1
-                str_group = f"同一音源-{counter_group}: "
+                str_group += f"⭕"
             # 選択されたfiles[0]のfilename, mtime, durationを取得
             for selected_file in files:
                 filename = selected_file['filename']
@@ -287,64 +378,67 @@ def main(page: ft.Page):
                 duration = selected_file['duration']
                 mtime_formatted = convert_epoch_to_string(mtime)
                 duration_formatted = str(timedelta(seconds=duration))
-                msg += f"{str_666} {str_group}{filename}: 変更時刻: {mtime_formatted}, 長さ: {duration_formatted}\n"
+                msg += f"{str_666} {str_group} : {filename}: 変更時刻: {mtime_formatted}, 長さ: {duration_formatted}\n"
 
         sound_info.value = msg
         sound_info.update()
-        
+
 
     # 指定されたパスから音声ファイルのリストを取得し、情報欄を更新する
     def update_sounds_list_and_rename_list(e: ft.FilePickerResultEvent):
         global dir_sounds
-        global file_groups 
+        global metadata_group 
         list_sounds = []
-        file_groups= {}
+        metadata_group= {}
         if e.path:
             dir_sounds = e.path
             info_sound_dir.value = dir_sounds
             list_sounds = get_sounds_list(dir_sounds)
+            #print(f'list_sounds:{list_sounds}')
             metadata_sounds = get_metadata_sounds(list_sounds,dir_sounds)
-            file_groups = grouping_sounds(metadata_sounds)
-            update_sounds_info(file_groups) # sound欄の更新
-            update_rename_info(file_groups) # rename欄の更新
+            print(f'metadata_sounds:{metadata_sounds}')
+            metadata_group = grouping_sounds(metadata_sounds)
+            update_sounds_info(metadata_group) 
+            update_rename_info(metadata_group) 
         else:
             info_sound_dir.value = "Cancelled!"
         info_sound_dir.update()
 
 
-    def rename(from_filename, to_filename):
-        # ファイル名をfrom_filenameからto_filenameに変更する関数
-        try:
-            # os.rename(from_filename, to_filename)
-            print(f"{from_filename} を {to_filename} にリネームしました。")
-        except OSError as e:
-            print(f"リネーム中にエラーが発生しました: {e}")
+    #def rename(from_file_path, to_file_path):
+    #    # ファイル名をfrom_filenameからto_filenameに変更する関数
+    #    try:
+    #        os.rename(from_file_path, to_file_path)
+    #        print(f"{from_file_path} を {to_file_path} にリネームしました。")
+    #    except OSError as e:
+    #        print(f"リネーム中にエラーが発生しました: {e}")
 
-    def execute_rename():
-        if is_set_site() & is_set_ICR() :
-            isStart = dict_ICR[selected_ICR] == 'START'
-            for mtime, files in file_groups.items():
-                if len(files) == 1:
-                    # 単一ファイルの場合、リストの最初の要素の 'filename' キーを使用
-                    filename = files[0]['filename']
-                    new_filename = get_renamed_sounds(files[0],isStart)
-                    original_filename = f"{dir_sounds}/{filename}"
-                    after_filename = f"{dir_output}/{new_filename}"
-                    if not check_filename_format(filename):
-                        rename(original_filename, after_filename)
-                else:
-                    if not any(check_filename_format(f['filename']) for f in files):
-                        # 拡張子を除いたファイル名を連結し、最後に拡張子を追加する
-                        filename = '_'.join(f['filename'].rsplit('.', 1)[0] for f in files) + '.' + files[0]['filename'].split('.')[-1]
-                        new_filename = get_renamed_sounds(files)
-                        after_filename = f"{dir_output}/{new_filename}"
-                        merge_and_rename_audio_files(file_groups,output_file=after_filename)
+    #def execute_rename():
+    #    if is_set_site() & is_set_ICR() :
+    #        isStart = dict_ICR[selected_ICR] == 'START'
+    #        for mtime, files in metadata_group.items():
+    #            print(files)
+    #            if len(files) == 1:
+    #                # 単一ファイルの場合、リストの最初の要素の 'filename' キーを使用
+    #                org_filename = files[0]['filename']
+    #                org_file_path = os.path.join(dir_sounds, org_filename)
+    #                new_filename = get_renamed_sound(files[0],isStart)
+    #                new_file_path = os.path.join(dir_output, new_filename)
+    #                if not check_filename_format(org_filename):
+    #                    rename(org_file_path, new_file_path)
+    #            else:
+    #                if not any(check_filename_format(f['filename']) for f in files):
+    #                    # 拡張子を除いたファイル名を連結し、最後に拡張子を追加する
+    #                    filename = '_'.join(f['filename'].rsplit('.', 1)[0] for f in files) + '.' + files[0]['filename'].split('.')[-1]
+    #                    new_filename = get_renamed_sounds(files)
+    #                    after_filename = f"{dir_output}/{new_filename}"
+    #                    merge_and_rename_audio_files(metadata_group,output_file=after_filename)
 
 
-    def cancel_rename():
-        # モーダルを閉じる処理
-        dialogue_confirm_to_rename.open = False
-        page.update()
+    #def cancel_rename():
+    #    # モーダルを閉じる処理
+    #    dialogue_confirm_to_rename.open = False
+    #    page.update()
     
     def update_info_modify_mtime_files(e: ft.FilePickerResultEvent):
         # 選択したファイルのmtimeを取得し、人が読める形式でmtime_of_selected_file.valueに設定
@@ -361,6 +455,52 @@ def main(page: ft.Page):
         info_modify_files.update()
 
 
+    
+    # 音声ファイルリストから、メタデータとしてファイル名、タイムスタンプとdurationを得る関数
+    def get_metadata_sounds(list_sounds,directory):
+        # 音声ファイルの属性を格納するリスト
+        metadata_sounds = []
+        #status_messages = []
+        for filename in list_sounds:
+            is666 = check_filename_format(filename)
+            file_path = os.path.join(directory, filename)
+            # ファイルの最終変更時刻を取得
+            mtime = os.path.getmtime(file_path)
+            # ファイルサイズが0でないことを確認
+            if os.path.getsize(file_path) == 0:
+                print(f"スキップされた空のファイル: {filename}")
+                continue
+            try:
+            # soundfileを使用してファイルを読み込む
+                data, samplerate = sf.read(file_path)
+                duration = len(data) / float(samplerate)
+                metadata_sounds.append({ 
+                    'filename': filename, 
+                    'mtime': mtime, 
+                    'duration': duration, 
+                    'file_path': file_path, 
+                    'is666': is666})
+            except RuntimeError as e:
+                print(f"スキップされた無効なオーディオファイル: {filename} ({e})")
+
+            #    file_stat = os.stat(file_path)
+            #    mtime = file_stat.st_mtime
+            #    with wave.open(file_path, 'r') as wav_file:
+            #        duration = wav_file.getnframes() / wav_file.getframerate()
+            #        metadata_sounds.append({ 
+            #            'filename': filename, 
+            #            'mtime': mtime, 
+            #            'duration': duration, 
+            #            'file_path': file_path, 
+            #            'is666': is666})
+            #except ValueError as e:
+            #    status_messages.append(f"スキップされた無効なWAVEファイル: {filename} ({e})")
+            #if not status_messages:
+            #    status_rename_result.value =  "リネーム成功: " + '\n'.join(new_filename) 
+            #else:
+            #    status_rename_result.value = '\n'.join(status_messages)
+        return metadata_sounds
+        
     def update_info_recover_filename(e: ft.FilePickerResultEvent):
         filenames_recover = []
         # 選択したファイルのmtimeを取得し、人が読める形式でmtime_of_selected_file.valueに設定
@@ -382,13 +522,14 @@ def main(page: ft.Page):
 
     def update_status_recover(filenames_recover):
         global filelist_recover
+        global pattern
         # status_recoverに表示するメッセージを初期化
         status_messages = []
         selected_files = []
         for file_path in filenames_recover:
             filename = os.path.basename(file_path)
             # 666形式のファイル名かどうかをチェックする正規表現パターン
-            pattern = r'^\d{6}_\d{6}_\d{6}_.*$'
+            #pattern = r'^\d{6}_\d{6}[_-]\d{6}_.*$'
             # 正規表現でファイル名がパターンにマッチするかチェック
             try:
                 if re.match(pattern, filename):
@@ -440,115 +581,39 @@ def main(page: ft.Page):
         time_picked.update()
 
 
-    dialogue_confirm_to_rename = ft.AlertDialog(
-        title=ft.Text("リネームの確認"),
-        content=ft.Text("リネームを実行しますか？"),
-        actions=[
-            ft.TextButton(
-                "実行",
-                on_click=lambda e: execute_rename()
-            ),
-            ft.TextButton(
-                "キャンセル",
-                on_click=lambda e: cancel_rename()
-            ),
-        ],
-        actions_alignment=ft.MainAxisAlignment.END
-    )
-
-    # ディレクトリの設定関連
-    info_sound_dir = ft.Text(size=10)
-    btn_sounds_dir = ft.Row([
-        ft.ElevatedButton(
-            "音声フォルダ",
-            icon=ft.icons.FOLDER,
-            on_click=lambda _: dialogue_sounds_dir.get_directory_path(),
-        ),
-        info_sound_dir,
-    ])
-
-    output_dir_path = ft.Text(size=10)
-    btn_output_dir = ft.Row([
-        ft.ElevatedButton(
-            "出力フォルダ",
-            icon=ft.icons.FOLDER,
-            on_click=lambda _: dialogue_output_dir.get_directory_path(),
-        ),
-        output_dir_path,
-    ])
-
-    sound_info = ft.TextField(
-        text_size=10,
-        label="オーディオファイル:",
-        multiline=True,
-        min_lines=4,
-        read_only=True,
-        max_lines=None,
-        value=""
-    )
-
-
-    dialogue_sounds_dir = ft.FilePicker(on_result=update_sounds_list_and_rename_list)
-    dialogue_output_dir = ft.FilePicker(on_result=get_output_directory)
-    dialogue_modify_mtime_file = ft.FilePicker(on_result=update_info_modify_mtime_files)
-    dialogue_recover_filename = ft.FilePicker(on_result=update_info_recover_filename)
-
-    renamed_info = ft.TextField(
-        text_size=10,
-        label="ファイル名変更後：",
-        multiline=True,
-        min_lines=4,
-        read_only=True,
-        max_lines=None,
-        value="",
-    )
-
-
-    name_site = ft.Text()
-    name_ICR = ft.Text(size=10)
-
-    info_selected_site = ft.TextField(
-        label = f"録音サイト:{selected_site}",
-        text_size=14,
-        disabled= True)
-
-    info_selected_ICR = ft.TextField(
-        label = f"ICレコーダ:{selected_ICR}",
-        text_size=14,
-        disabled= True)
-
-    # dict_ICRから動的に生成する。
-    dropdown_options = [ft.dropdown.Option(key) for key, value in dict_ICR.items()]
-
-    
-    status_rename = ft.Text(size=10)
-    info_modified_mtime = ft.TextField(
-        text_size=10,
-        label="変更結果",
-        multiline=True,
-        min_lines=4,
-        read_only=True,
-        max_lines=None,
-        value="",
-        )
-
-    status_recover = ft.TextField(
-        text_size=10,
-        label="メッセージ：",
-        multiline=True,
-        min_lines=4,
-        read_only=True,
-        max_lines=None,
-        value="",
-        )
-
-    status_recover_result = ft. Text(size=10)
-
     # リネーム実行ボタンのイベントハンドラ
     def btn_extract_rename(_):
+        global dir_output
+        status_messages =[]
+
         if is_set_site() and is_set_ICR():
-            dialogue_confirm_to_rename.open = True  # AlertDialogを開く
-            page.update()
+            isStart = dict_ICR[selected_ICR] == 'START'
+            for mtime, files in metadata_group.items():
+                print(files)
+                try:
+                    if len(files) == 1:
+                        # 単一ファイルの場合、リストの最初の要素の 'filename' キーを使用
+                        #org_filename = files[0]['filename']
+                        #org_file_path = os.path.join(dir_sounds, org_filename)
+                        org_file_path = files[0]['file_path']
+                        new_filename = get_renamed_sound(files[0],isStart)
+                        new_file_path = os.path.join(dir_output, new_filename)
+                        print(f"new_file_path:{new_file_path}")
+                        os.rename(org_file_path, new_file_path)
+                    else:
+                        if not any(check_filename_format(f['filename']) for f in files):
+                            # 拡張子を除いたファイル名を連結し、最後に拡張子を追加する
+                            filename = '_'.join(f['filename'].rsplit('.', 1)[0] for f in files) + '.' + files[0]['filename'].split('.')[-1]
+                            new_filename = get_renamed_sounds(files)
+                            new_file_path = os.path.join(dir_output,new_filename)
+                            merge_and_rename_audio_files(metadata_group,output_file=new_file_path)
+                except ValueError as e:
+                    status_messages.append(f"ファイル名変更中にエラーが発生しました：{e}")
+        if not status_messages:
+            status_rename_result.value =  "リネーム成功: " + '\n'.join(new_filename) 
+        else:
+            status_rename_result.value = '\n'.join(status_messages)
+        status_rename_result.update()
 
 
     # ファイル名復元実行ボタンのイベントハンドラ
@@ -575,7 +640,7 @@ def main(page: ft.Page):
             except ValueError as e:
                 status_messages.append(f"ファイル名の更新中にエラーが発生しました: {e}")
 
-        if new_filename:
+        if not status_messages:
             status_recover_result.value =  "復元成功: " + '\n'.join(new_filename) 
         else:
             status_recover_result.value = '\n'.join(status_messages)
@@ -625,9 +690,13 @@ def main(page: ft.Page):
 
 
     # ダイアローグの追加                
+    dialogue_sounds_dir = ft.FilePicker(on_result=update_sounds_list_and_rename_list)
+    dialogue_output_dir = ft.FilePicker(on_result=get_output_directory)
+    dialogue_modify_mtime_file = ft.FilePicker(on_result=update_info_modify_mtime_files)
+    dialogue_recover_filename = ft.FilePicker(on_result=update_info_recover_filename)
+
     page.overlay.append(dialogue_sounds_dir)
     page.overlay.append(dialogue_output_dir)
-    page.overlay.append(dialogue_confirm_to_rename)
     page.overlay.append(dialogue_modify_mtime_file)
     page.overlay.append(dialogue_recover_filename)
 
@@ -652,53 +721,74 @@ def main(page: ft.Page):
     )
     date_picked=ft.Text("date",size=10)
     time_picked=ft.Text("time",size=10)
+
     # UIの定義
     t = ft.Tabs(
-        selected_index=2,
+        selected_index=0,
         animation_duration=300,
+        #tabs=[
+            #ft.Tab(
+            #    text="サイト名",
+            #    icon=ft.icons.PLACE,
+            #    content=ft.Container(
+            #        padding=20,
+            #        content=ft.Column([
+            #            ft.Text(value="録音地を登録してください（暫定の入力です）。"),
+            #            ft.TextField(label="サイト名(例FukuiEchizen)",
+            #                        autofocus = True,
+            #                        value=dict_site['サイト名'],
+            #                        on_change=lambda e: update_dict_site('サイト名', e.control.value)
+            #                        ),
+            #            name_site
+            #        ]),
+            #    ),
+            #),
+            #ft.Tab(
+            #    text="ICレコーダ",
+            #    icon=ft.icons.KEYBOARD_VOICE,
+            #    content=ft.Container(
+            #        padding=20,
+            #        content=ft.Column([
+            #            ft.Dropdown(
+            #                label = "IC Recorder",
+            #                hint_text="録音したICレコーダを選択してください。用いるデータはタイムスタンプが開始(START)か終了(STOP)です。",
+            #                options = dropdown_options,
+            #                on_change=on_dropdown_change
+            #            ),
+            #            name_ICR
+            #        ])
+            #    ),
+            #),
         tabs=[
             ft.Tab(
-                text="サイト名",
-                icon=ft.icons.PLACE,
-                content=ft.Container(
-                    padding=20,
-                    content=ft.Column([
-                        ft.Text(value="録音地を登録してください（暫定の入力です）。"),
-                        ft.TextField(label="サイト名(例FukuiEchizen)",
-                                    autofocus = True,
-                                    value=dict_site['サイト名'],
-                                    on_change=lambda e: update_dict_site('サイト名', e.control.value)
-                                    ),
-                        name_site
-                    ]),
-                ),
-            ),
-            ft.Tab(
-                text="ICレコーダ",
-                icon=ft.icons.KEYBOARD_VOICE,
-                content=ft.Container(
-                    padding=20,
-                    content=ft.Column([
-                        ft.Dropdown(
-                            label = "IC Recorder",
-                            hint_text="録音したICレコーダを選択してください。用いるデータはタイムスタンプが開始(START)か終了(STOP)です。",
-                            options = dropdown_options,
-                            on_change=on_dropdown_change
-                        ),
-                        name_ICR
-                    ])
-                ),
-            ),
-            ft.Tab(
-                text="リネーム to 666",
+                text="リネーム",
                 icon=ft.icons.DRIVE_FILE_MOVE_OUTLINE,
                 content=ft.Container(
                     margin = 20,
                     content=ft.Column([
                         ft.Text(msg_rename),
                         ft.Row([
-                            info_selected_site,
+                            #info_selected_site,
+                            ft.TextField(
+                                icon=ft.icons.PLACE,
+                                label = "サイト名入力:",
+                                autofocus = True,
+                                text_size=14,
+                                hint_text="AwatabeEchizenFukui",
+                                disabled= False,
+                                value="",
+                                on_change=changed_name_site,
+                            ),
+                            info_name_site,
+                            ft.Dropdown(
+                                icon=ft.icons.KEYBOARD_VOICE,
+                                label = "レコーダ選択",
+                                hint_text="レコーダにはタイムスタンプが開始(START)か終了(STOP)の2種があります。",
+                                options = dropdown_options,
+                                on_change=on_dropdown_change
+                            ),
                             info_selected_ICR,
+                            #name_ICR
                         ]),
                         btn_sounds_dir,
                         btn_output_dir,
@@ -710,7 +800,7 @@ def main(page: ft.Page):
                                 icon=ft.icons.EMOJI_EMOTIONS,
                                 on_click=btn_extract_rename,  # 修正したイベントハンドラを使用
                             ),
-                            status_rename,
+                            status_rename_result
                         ]),
                     ])
                 ),

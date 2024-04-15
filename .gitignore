@@ -167,5 +167,5 @@ cython_debug/
 
 
 # FLET/Flutter
-flet-build-template/{{cookiecutter.out_dir}}/
+nfc-rename/flet-build-template/{{cookiecutter.out_dir}}/
 test/

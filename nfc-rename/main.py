@@ -67,6 +67,7 @@ audio_extensions = ['.wav']
 dict_ICR = {
     'DM-750': 'START',
     'LS-7': 'START',
+    'DR-05': 'STOP',
     'dummy_stop': 'STOP'
 }
 
@@ -895,7 +896,7 @@ def main(page: ft.Page):
                         ft.Row([
                             ft.TextField(
                                 icon=ft.icons.PLACE,
-                                label = "サイト名（県名+市名+通し番号）",
+                                label = "①サイト名（県名+市名+通し番号）",
                                 autofocus = True,
                                 text_size=14,
                                 hint_text="福井県越前市0(通し番号は０始まり)",
@@ -906,7 +907,7 @@ def main(page: ft.Page):
                             info_name_site,
                             ft.Dropdown(
                                 icon=ft.icons.KEYBOARD_VOICE,
-                                label = "レコーダ",
+                                label = "②レコーダ",
                                 hint_text="レコーダにはタイムスタンプが開始(START)か終了(STOP)の2種があります。",
                                 options = dropdown_options,
                                 on_change=on_dropdown_change
@@ -915,7 +916,7 @@ def main(page: ft.Page):
                         ]),
                         ft.Row([
                             ft.ElevatedButton(
-                                "音声フォルダ",
+                                "③音声フォルダ",
                                 icon=ft.icons.FOLDER,
                                 on_click=lambda _: dialogue_sounds_dir.get_directory_path(),
                             ),
@@ -923,7 +924,7 @@ def main(page: ft.Page):
                         ]),
                         ft.Row([
                             ft.ElevatedButton(
-                                "出力フォルダ",
+                                "④出力フォルダ",
                                 icon=ft.icons.FOLDER,
                                 on_click=lambda _: dialogue_output_dir.get_directory_path(),
                             ),
@@ -934,7 +935,7 @@ def main(page: ft.Page):
                         checkbox_merge,
                         ft.Row([
                             ft.ElevatedButton(
-                                "リネーム実行",
+                                "⑤リネーム実行",
                                 icon=ft.icons.EMOJI_EMOTIONS,
                                 on_click=btn_extract_rename,  # 修正したイベントハンドラを使用
                             ),
@@ -1050,7 +1051,8 @@ def main(page: ft.Page):
                         ft.Text(" - タイムスタンプ変更： ファイルのタイムスタンプ（最終変更日時:mtime)を変更します"),
                         ft.Text("【ヒント】"),
                         ft.Text(" - 同一録音の再設定は、オリジナルファイル名を複数選択し、同じmtimeを設定してください。これは同じmtimeを持ち、連続するファイル名の場合に有効です。"),
-                        ft.Text(" - 作成日(Birthday)は変更しません。")
+                        ft.Text(" - 作成日(Birthday)は変更しません。"),
+                        ft.Text(" Olympus: DM-750とLS-7は2GBを超えるファイルが自動分割されます。このとき生成されたファイルはすべて同じタイムスタンプ（mtime）を持ちます。そのため、同じ録音ファイルを同一グループとしファイル名の若い順にファイル名を生成します。なおDR-05(TASCAM）も自動分割されますが、タイムスタンプは正常に設定されています。"),
                     ]),
                 ),
             )

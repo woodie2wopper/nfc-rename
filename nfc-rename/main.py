@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 import flet as ft
 import os
-#import pathlib
+import shutil
 import wave
-#import soundfile as sf
-#from mutagen.easyid3 import EasyID3
 from datetime import timezone, datetime, timedelta
 import re
 import logging
@@ -83,9 +81,7 @@ filelist_remtime=[] # mtimeを変更するファイルリスト
 pattern = r'(\d{6})_(\d{6})[_-](\d{6})_'
 
 msg_rename="""\
-フォルダ内のWAVファイル名を666+形式にリネームします。
-
-【使い方】: サイト名入力＋ICレコーダ選択 > 音声フォルダ選択 > 出力フォルダ選択 > 確認後、リネーム実行
+フォルダ内のWAVファイル名を666+形式にリネームします。①〜⑤を順に設定してください。
 【注意】
 　- ICレコーダを変更したら、ディレクトリを選び直してください。
 　- ⭕️はファイルスタンプが同じ同一音源でファイル名を降順にリネームします。
@@ -176,7 +172,6 @@ def recover_filename(filename):
     recovered_parts = parts[4:]
     # 残りの部分を"_"で結合して返す
     recovered_filename = '_'.join(recovered_parts)
-    #print(f"recovered:{recovered_filename}")
     return recovered_filename
 
 def split_filename(filename):
@@ -259,7 +254,6 @@ def merge_and_rename_audio_files(metadata_group, output_file):
 
         # ファイル名をソートして順番に読み込み出力ファイルに追記する
         sorted_file_list = sorted(metadata_group)
-        #print(f'sorted_file_list:{sorted_file_list}')
         for file in sorted_file_list:
             with wave.open(file, 'rb') as input_wave:
                 # パラメータの互換性を確認
@@ -288,7 +282,15 @@ def main(page: ft.Page):
     page.scroll=True
 
     # flet関連
-    status_rename_result = ft.Text(size=10)
+    status_rename_result = ft.TextField(
+        text_size=10,
+        label="結果:",
+        multiline=True,
+        min_lines=1,
+        read_only=True,
+        max_lines=None,
+        value=""
+        )
     info_sound_dir = ft.Text(size=10)
     output_dir_path = ft.Text(size=10)
     name_ICR = ft.Text(size=10)
@@ -306,7 +308,7 @@ def main(page: ft.Page):
 
     renamed_info = ft.TextField(
         text_size=10,
-        label="メッセージ：",
+        label="変更前後のファイル名：",
         multiline=True,
         min_lines=4,
         read_only=True,
@@ -333,7 +335,7 @@ def main(page: ft.Page):
         text_size=10,
         label="結果:",
         multiline=True,
-        min_lines=4,
+        min_lines=1,
         read_only=True,
         max_lines=None,
         value="",
@@ -349,7 +351,15 @@ def main(page: ft.Page):
         value="",
         )
 
-    status_recover_result = ft. Text(size=10)
+    status_recover_result = ft. TextField(
+        text_size=10,
+        label="結果",
+        multiline=True,
+        min_lines=1,
+        read_only=True,
+        max_lines=None,
+        value="",
+        )
 
 
     def changed_name_site(e):
@@ -357,11 +367,13 @@ def main(page: ft.Page):
         name_site=e.control.value
         info_name_site.value = name_site
         info_name_site.update()
+        print(f'name_site:{name_site}')
 
 
     def on_dropdown_change(e):
         global selected_ICR  # selected_ICRをグローバル変数として宣言
         selected_ICR = e.control.value  # 選択されたOptionのvalue属性がキーになります
+        print(f'select_ICR:{selected_ICR}')
         update_ICR_info()
 
 
@@ -417,7 +429,6 @@ def main(page: ft.Page):
                 metadata_in_same_groups[i]['mtime'] = stop_epoch
                 # 次のために計算しておく
                 start_epoch = stop_epoch - duration
-        #print(f"new:{metadata_in_same_groups}")
         return metadata_in_same_groups
 
 
@@ -440,6 +451,15 @@ def main(page: ft.Page):
         new_filename = get_666(filename, start_epoch, stop_epoch, name_site)
         return new_filename
 
+    def update_rename_result(msg):
+        status_rename_result.value += msg
+        status_rename_result.update()
+
+
+    def update_recover_result(msg):
+        status_recover_result.value += msg
+        status_recover_result.update()
+        
     # ファイル名の変更に関する情報を更新する関数
     def update_rename_info(metadata_group):
         msg=[]
@@ -475,8 +495,7 @@ def main(page: ft.Page):
             msg.sort()
         else:
             msg.append(f"Error: ICレコーダもしくはサイト名が設定されていません")
-                
-        renamed_info.value += '\n' + '\n'.join(msg)
+        renamed_info.value +=  '\n' + '\n'.join(msg)
         renamed_info.update()
     
 
@@ -530,9 +549,7 @@ def main(page: ft.Page):
             dir_sounds = e.path
             info_sound_dir.value = dir_sounds
             list_sounds = get_sounds_list(dir_sounds)
-            #print(f'list_sounds:{list_sounds}')
             metadata_sounds = get_metadata_sounds(list_sounds,dir_sounds)
-            #print(f'metadata_sounds:{metadata_sounds}')
             metadata_group = grouping_sounds(metadata_sounds)
             update_sounds_info(metadata_group) 
             update_rename_info(metadata_group) 
@@ -546,11 +563,11 @@ def main(page: ft.Page):
         msg = []
         if to_file_path:
             try:
-                os.rename(from_file_path, to_file_path)
-                msg.append(f"{from_file_path} -> {to_file_path} ")
+                #msg.append(f"rename実行：{from_file_path} -> {to_file_path} ")
+                shutil.move(from_file_path, to_file_path)# ファイルシステムを超えて移動を可能にする
             except OSError as e:
                 msg.append(f"リネーム中にエラーが発生しました: {e}")
-        print(f'RENAME実行：{msg}')
+        print(f"rename実行：{from_file_path}:to:{to_file_path} ")
         return msg
 
 
@@ -558,11 +575,13 @@ def main(page: ft.Page):
         msg = []
         if file_path:
             try:
+                msg.append(f'{file_path}')
                 os.utime(file_path, (mtime, mtime))
             except:
                 msg.append("ERROR: mtimeが設定できませんでした。")
-        print(f'REmtime実行：{msg}')
+        print(f're-mtime実行：{file_path}:mtime:{mtime}')
         return msg
+
 
     def execute_rename(metadata_group, output_dir_path,is_start):
         msg = []
@@ -570,18 +589,15 @@ def main(page: ft.Page):
             org_file_path = file['file_path']
             new_filename = get_renamed_sound(file,is_start)
             new_file_path = os.path.join(output_dir_path, new_filename)
-            msg.append(rename(org_file_path, new_file_path))
-            msg.append(remtime(new_file_path,mtime))
+            update_rename_result(f'\n rename実行：{org_file_path} → {new_file_path}')
+            msg.extend(rename(org_file_path, new_file_path))
+            msg.extend(remtime(new_file_path,mtime))
         return msg
 
 
-    #def cancel_rename():
-    #    # モーダルを閉じる処理
-    #    dialogue_confirm_to_rename.open = False
-    #    page.update()
-    
     def update_info_modify_mtime_files(e: ft.FilePickerResultEvent):
         global filelist_remtime
+        filelist_remtime = []
         selected_files_mtime = []
         msg = []
         if e.files:
@@ -605,7 +621,6 @@ def main(page: ft.Page):
         metadata_sounds = []
         msg = []
         for filename in list_sounds:
-            #print(f'get_meta_sounds:{filename}')
             is666 = check_filename_format(filename)
             file_path = os.path.join(directory, filename)
             # ファイルの最終変更時刻を取得
@@ -630,8 +645,9 @@ def main(page: ft.Page):
                 else:
                     msg.append(f"スキップ: {filename} durationが取得できませんでした")
         if msg:
-            renamed_info.value += '\n'.join(msg)
-            print(f'metadata取得失敗:{msg}')
+            str = '\n'.join(msg)
+            renamed_info.value += str
+            print(f'metadata取得失敗:{str}')
         renamed_info.update()
         return metadata_sounds
         
@@ -718,7 +734,7 @@ def main(page: ft.Page):
 
 
     # リネーム実行ボタン：ICレコーダ毎にファイル名を変える
-    def btn_extract_rename(_):
+    def btn_rename(_):
         global dir_output
         msg =[]
 
@@ -743,7 +759,9 @@ def main(page: ft.Page):
                             org_file_path = files[0]['file_path']
                             new_filename = get_renamed_sound(files[0],is_start)
                             new_file_path = os.path.join(dir_output, new_filename)
+                            update_rename_result(f'\n rename実行：{org_file_path} → {new_file_path}')
                             msg.extend(rename(from_file_path=org_file_path,to_file_path=new_file_path))
+                            
                         else: # 同一録音（グループファイル）の場合
                             # ICRとグループファイルの種類でis_startの設定が異なる
                             is_start = check_ICR_type(selected_ICR,is_group=True)
@@ -753,24 +771,21 @@ def main(page: ft.Page):
                                 newed_metadata = set_each_mtime(metadata_in_same_groups=files,is_start=is_start)
                                 newed_metadata_dict = {file['mtime']: file for file in newed_metadata}
                                 msg.extend(execute_rename(newed_metadata_dict, output_dir_path=dir_output, is_start=is_start))
-                                print(msg)
                             else: # 同一録音を一つにマージする
                                 merge_and_rename_audio_files(metadata_group, output_file=new_file_path)
+                        str = '\n'.join(msg)
+                        print(f'btn_rename:{str}')
                 except ValueError as e:
                     msg.append(f"ファイル名変更中にエラーが発生しました：{e}")
-        if not msg:
-            status_rename_result.value =  "リネーム終了\n " + '\n'.join(msg)
-        else:
-            status_rename_result.value = '\n'.join(msg)
+        status_rename_result.value +=  "\nリネーム終了\n" + '\n'.join(msg)
         status_rename_result.update()
 
 
     # ファイル名復元実行ボタンのイベントハンドラ
-    def btn_extract_recover(_):
+    def btn_recover(_):
         global filelist_recover
         msg = []
         new_filename = []
-
         for file_info in filelist_recover:
             try:
                 prev_file_path = file_info['file_path']
@@ -779,15 +794,12 @@ def main(page: ft.Page):
                 mtime = file_info['mtime']
                 recover_file_path = file_info['recover_path']
                 new_filename.append(os.path.basename(recover_file_path))
-                msg = rename(prev_file_path, recover_file_path)
-                os.utime(recover_file_path, (mtime, mtime))
+                update_recover_result(f'\n recover実行：{prev_file_path} → {recover_file_path}')
+                msg.extend(rename(prev_file_path, recover_file_path))
+                msg.extend(remtime(recover_file_path, mtime))
             except ValueError as e:
                 msg.append(f"ファイル名の更新中にエラーが発生しました: {e}")
-
-        if not msg:
-            status_recover_result.value =  "復元終了: " + '\n'.join(new_filename) 
-        else:
-            status_recover_result.value = '\n'.join(msg)
+        status_recover_result.value += '\n復元終了\n' + '\n'.join(msg)
         status_recover_result.update()
 
 
@@ -830,7 +842,7 @@ def main(page: ft.Page):
             if file_path:  # 空の行を無視
                 try:
                     datetime_from_epoch = datetime.fromtimestamp(epoch_seconds, tz_info)
-                    os.utime(file_path, (datetime_from_epoch.timestamp(), datetime_from_epoch.timestamp()))
+                    msg.extend(remtime(file_path,datetime_from_epoch.timestamp()))
                     file_name = os.path.basename(file_path)
                     mtime_str = datetime_from_epoch.strftime("%Y-%m-%d %H:%M:%S")
                     msg.append(f"{file_name} のmtimeを{mtime_str}に更新しました。")
@@ -905,6 +917,8 @@ def main(page: ft.Page):
                                 on_change=changed_name_site,
                             ),
                             info_name_site,
+                        ]),
+                        ft.Row([
                             ft.Dropdown(
                                 icon=ft.icons.KEYBOARD_VOICE,
                                 label = "②レコーダ",
@@ -937,7 +951,7 @@ def main(page: ft.Page):
                             ft.ElevatedButton(
                                 "⑤リネーム実行",
                                 icon=ft.icons.EMOJI_EMOTIONS,
-                                on_click=btn_extract_rename,  # 修正したイベントハンドラを使用
+                                on_click=btn_rename,  # 修正したイベントハンドラを使用
                             ),
                         ]),
                         status_rename_result
@@ -973,7 +987,7 @@ def main(page: ft.Page):
                             ft.ElevatedButton(
                                 "復元",
                                 icon=ft.icons.EMOJI_EMOTIONS,
-                                on_click=btn_extract_recover,  # 修正したイベントハンドラを使用
+                                on_click=btn_recover,  # 修正したイベントハンドラを使用
                             ),
                         ]),
                         status_recover_result
@@ -1000,7 +1014,7 @@ def main(page: ft.Page):
                         ft.Row([
                             ft.TextField(
                                 label="日付入力",
-                                hint_text="2024-04-01 or 240101",
+                                hint_text="240101",
                                 icon=ft.icons.CALENDAR_MONTH_OUTLINED,
                                 multiline=False,
                                 on_change=datebox_change,
@@ -1010,7 +1024,7 @@ def main(page: ft.Page):
                         ft.Row([
                             ft.TextField(
                                 label="時刻入力",
-                                hint_text="01:23:45 or 012345",
+                                hint_text="012345",
                                 icon=ft.icons.ACCESS_TIME,
                                 multiline=False,
                                 on_change=timebox_change,

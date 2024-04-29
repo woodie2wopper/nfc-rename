@@ -7,6 +7,10 @@ from datetime import timezone, datetime, timedelta
 import re
 import logging
 import sys
+import ffmpeg
+import subprocess
+import json
+
 
 class StreamToLogger:
     """
@@ -45,14 +49,14 @@ logging.basicConfig(
 
 
 # 標準出力と標準エラーをリダイレクト
-sys.stdout = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO)
-sys.stderr = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR)
+#sys.stdout = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO)
+#sys.stderr = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR)
 
 
 # ログのテスト
 logging.info('ログファイルスタート')
 
-audio_extensions = ['.wav']
+audio_extensions = ['.wav','.mp3']
 #audio_extensions = ['.wav','.mp3']
 # 録音サイトのメタデータを格納するグローバル変数
 #dict_site = {
@@ -68,8 +72,37 @@ dict_ICR = {
     'DR-05': 'STOP',
     'dummy_stop': 'STOP'
 }
+import platform
+
+def get_os():
+    """
+    現在実行中のOSを判定する関数
+    :return: OSの名前を文字列で返す
+    """
+    os_name = platform.system()
+    return os_name
+
 
 # グローバル変数定義
+def set_ffmpeg_path():
+    """
+    OSに応じてffmpegのパスを設定する関数
+    :return: ffmpegのパスを文字列で返す
+    """
+    os_name = get_os()
+    print("現在のディレクトリ:", os.getcwd())
+    if os_name == 'Darwin':  # MacOSXの場合
+        return './vendors/for_Mac/'
+    elif os_name == 'Windows':  # Windowsの場合
+        return './vendors/for_Win/'
+    else:
+        raise EnvironmentError('サポートされていないOSです。')
+
+ffmpeg_path = set_ffmpeg_path()
+ffmpeg_command = os.path.join(ffmpeg_path, "ffmpeg")
+ffprobe_command = os.path.join(ffmpeg_path, "ffprobe")
+ffplay_command = os.path.join(ffmpeg_path, "ffplay")
+
 selected_ICR=''
 name_site=''
 dir_sounds="" # 音声ディレクトリ
@@ -112,12 +145,25 @@ def is_exist_dir_path(dir_path):
 
 
 def get_duration_mp3(mp3_path):
+    """
+    ffmpegを使用してMP3ファイルの長さを取得する関数
+    :param mp3_path: MP3ファイルのパス
+    :return: ファイルの長さ（秒）
+    """
     try:
-        audio = MP3(mp3_path)
-        duration = audio.info.length
-        return duration
-    except:
+        # ffprobeコマンドを実行し、JSON形式でメタデータを取得
+        result = subprocess.run(
+            [ffprobe_command, "-v", "error", "-show_entries", "format=duration", "-of", "json", mp3_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT
+        )
+        # 結果をJSONとして解析
+        duration = json.loads(result.stdout)['format']['duration']
+        return float(duration)
+    except Exception as e:
+        print(f"Error occurred while getting duration of {mp3_path}: {e}")
         return None
+
 
 # waveを用いて長さを取得する
 def get_duration_wav(wav_path):
@@ -633,8 +679,8 @@ def main(page: ft.Page):
                 # 拡張子に応じて適切な関数を使用してdurationを取得する
                 if filename.lower().endswith('.wav'):
                     duration = get_duration_wav(file_path)
-                else:
-                    duration = None
+                elif filename.lower().endswith('.mp3'):
+                    duration = get_duration_mp3(file_path)
                 if duration is not None:
                     metadata_sounds.append({ 
                         'filename': filename, 

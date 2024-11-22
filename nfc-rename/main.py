@@ -212,8 +212,9 @@ def show_message(instance_text,msg):
 
 
 def recover_filename(filename):
-    # "_"で区切られたファイル名を分割する
-    parts = filename.split('_')
+    # "_"か"-"で区切られたファイル名を分割するコードを挿入
+    parts = re.split(r'[_-]', filename)
+    #    parts = filename.split('_')
     # 最初の4つの部分を削除する
     recovered_parts = parts[4:]
     # 残りの部分を"_"で結合して返す
@@ -221,8 +222,9 @@ def recover_filename(filename):
     return recovered_filename
 
 def split_filename(filename):
-    # "_"で区切られたファイル名を分割する
-    parts = filename.split('_')
+    # "_","-"で区切られたファイル名を分割する
+    parts = re.split(r'[_-]', filename)
+    #parts = filename.split('_')
     # 最初の要素をdate_str、２番目をstart_time,３番目をstop_timeに分ける
     if len(parts) >= 3:
         date_str = parts[0]
@@ -681,6 +683,7 @@ def main(page: ft.Page):
                     duration = get_duration_wav(file_path)
                 elif filename.lower().endswith('.mp3'):
                     duration = get_duration_mp3(file_path)
+                #print(f"duration={duration}")
                 if duration is not None:
                     metadata_sounds.append({ 
                         'filename': filename, 

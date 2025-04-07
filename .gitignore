@@ -170,3 +170,5 @@ cython_debug/
 nfc-rename/flet-build-template/{{cookiecutter.out_dir}}/
 test/
 vendors/
+
+.specstory

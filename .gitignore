@@ -11,6 +11,10 @@ __pycache__/
 .AppleDouble
 .LSOverride
 .Rhistory
+ffprobe.exe
+ffmpeg.exe
+ffplay.exe
+ffprobe.exe
 
 # Distribution / packaging
 .Python

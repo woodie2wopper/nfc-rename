@@ -7,6 +7,10 @@ from datetime import timezone, datetime, timedelta
 import re
 import logging
 import sys
+import ffmpeg
+import subprocess
+import json
+
 
 class StreamToLogger:
     """
@@ -45,14 +49,14 @@ logging.basicConfig(
 
 
 # 標準出力と標準エラーをリダイレクト
-sys.stdout = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO)
-sys.stderr = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR)
+#sys.stdout = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO)
+#sys.stderr = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR)
 
 
 # ログのテスト
 logging.info('ログファイルスタート')
 
-audio_extensions = ['.wav']
+audio_extensions = ['.wav','.mp3']
 #audio_extensions = ['.wav','.mp3']
 # 録音サイトのメタデータを格納するグローバル変数
 #dict_site = {
@@ -63,13 +67,43 @@ audio_extensions = ['.wav']
 #    #'経度': '',
 #}
 dict_ICR = {
+    'dummy_start': 'START',
     'DM-750': 'START',
     'LS-7': 'START',
     'DR-05': 'STOP',
     'dummy_stop': 'STOP'
 }
+import platform
+
+def get_os():
+    """
+    現在実行中のOSを判定する関数
+    :return: OSの名前を文字列で返す
+    """
+    os_name = platform.system()
+    return os_name
+
 
 # グローバル変数定義
+def set_ffmpeg_path():
+    """
+    OSに応じてffmpegのパスを設定する関数
+    :return: ffmpegのパスを文字列で返す
+    """
+    os_name = get_os()
+    print("現在のディレクトリ:", os.getcwd())
+    if os_name == 'Darwin':  # MacOSXの場合
+        return './vendors/for_Mac/'
+    elif os_name == 'Windows':  # Windowsの場合
+        return './vendors/for_Win/'
+    else:
+        raise EnvironmentError('サポートされていないOSです。')
+
+ffmpeg_path = set_ffmpeg_path()
+ffmpeg_command = os.path.join(ffmpeg_path, "ffmpeg")
+ffprobe_command = os.path.join(ffmpeg_path, "ffprobe")
+ffplay_command = os.path.join(ffmpeg_path, "ffplay")
+
 selected_ICR=''
 name_site=''
 dir_sounds="" # 音声ディレクトリ
@@ -112,12 +146,25 @@ def is_exist_dir_path(dir_path):
 
 
 def get_duration_mp3(mp3_path):
+    """
+    ffmpegを使用してMP3ファイルの長さを取得する関数
+    :param mp3_path: MP3ファイルのパス
+    :return: ファイルの長さ（秒）
+    """
     try:
-        audio = MP3(mp3_path)
-        duration = audio.info.length
-        return duration
-    except:
+        # ffprobeコマンドを実行し、JSON形式でメタデータを取得
+        result = subprocess.run(
+            [ffprobe_command, "-v", "error", "-show_entries", "format=duration", "-of", "json", mp3_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT
+        )
+        # 結果をJSONとして解析
+        duration = json.loads(result.stdout)['format']['duration']
+        return float(duration)
+    except Exception as e:
+        print(f"Error occurred while getting duration of {mp3_path}: {e}")
         return None
+
 
 # waveを用いて長さを取得する
 def get_duration_wav(wav_path):
@@ -166,8 +213,9 @@ def show_message(instance_text,msg):
 
 
 def recover_filename(filename):
-    # "_"で区切られたファイル名を分割する
-    parts = filename.split('_')
+    # "_"か"-"で区切られたファイル名を分割するコードを挿入
+    parts = re.split(r'[_-]', filename)
+    #    parts = filename.split('_')
     # 最初の4つの部分を削除する
     recovered_parts = parts[4:]
     # 残りの部分を"_"で結合して返す
@@ -175,8 +223,9 @@ def recover_filename(filename):
     return recovered_filename
 
 def split_filename(filename):
-    # "_"で区切られたファイル名を分割する
-    parts = filename.split('_')
+    # "_","-"で区切られたファイル名を分割する
+    parts = re.split(r'[_-]', filename)
+    #parts = filename.split('_')
     # 最初の要素をdate_str、２番目をstart_time,３番目をstop_timeに分ける
     if len(parts) >= 3:
         date_str = parts[0]
@@ -316,6 +365,15 @@ def main(page: ft.Page):
         value="",
     )
 
+    info_split_result = ft.TextField(
+        text_size=10,
+        label="分割結果：",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value="",
+    )
     def init_renamed_info():
         renamed_info.value = ""
         renamed_info.update()
@@ -467,18 +525,16 @@ def main(page: ft.Page):
         # metadata_groupをキー'mtime'の値の小さい順に並び替える
         metadata_group = dict(sorted(metadata_group.items(), key=lambda item: item[0]))
         if is_set_site() & is_set_ICR() :
-            # is_start = dict_ICR[selected_ICR] == 'START'
+            is_start = dict_ICR[selected_ICR] == 'START'
             for mtime, files in metadata_group.items():
                 # ファイル名が既にフォーマットされている場合は処理をスキップ
                 if check_filename_format(files[0]['filename']):
                     continue
                 if len(files) == 1:
-                    is_start = check_ICR_type(selected_ICR,is_group=False)
                     filename = files[0]['filename']
                     new_filename = get_renamed_sound(files[0], is_start)
                     msg.append(f"{filename} -> {new_filename}")
                 else: # 同一録音の場合
-                    is_start = check_ICR_type(selected_ICR,is_group=True)
                     if checkbox_merge.value: 
                         # 同一録音を一つにマージする
                         filename = '⭕️ ' + ' +\n⭕️ '.join(f['filename'] for f in files)
@@ -563,7 +619,7 @@ def main(page: ft.Page):
         msg = []
         if to_file_path:
             try:
-                #msg.append(f"rename実行：{from_file_path} -> {to_file_path} ")
+                #msg.append(f"rename実：{from_file_path} -> {to_file_path} ")
                 shutil.move(from_file_path, to_file_path)# ファイルシステムを超えて移動を可能にする
             except OSError as e:
                 msg.append(f"リネーム中にエラーが発生しました: {e}")
@@ -633,8 +689,9 @@ def main(page: ft.Page):
                 # 拡張子に応じて適切な関数を使用してdurationを取得する
                 if filename.lower().endswith('.wav'):
                     duration = get_duration_wav(file_path)
-                else:
-                    duration = None
+                elif filename.lower().endswith('.mp3'):
+                    duration = get_duration_mp3(file_path)
+                #print(f"duration={duration}")
                 if duration is not None:
                     metadata_sounds.append({ 
                         'filename': filename, 
@@ -656,7 +713,7 @@ def main(page: ft.Page):
         # ファイルが選択されるたびにリストは空にする
         filelist_recover = []
         filenames_recover = []
-        # 選択したファイルのmtimeを取得し、人が読める形式でmtime_of_selected_file.valueに設定
+        # 選択したファイルのmtimeを得し、人が読める形式でmtime_of_selected_file.valueに設定
         selected_files = []
         if e.files:
             for file in e.files:
@@ -673,7 +730,6 @@ def main(page: ft.Page):
         # 復元後のファイル名表示
         update_status_recover(filenames_recover)
 
-
     def update_status_recover(filenames_recover):
         global filelist_recover
         global pattern
@@ -688,7 +744,7 @@ def main(page: ft.Page):
                     recovered_filename = recover_filename(filename)
                     recovered_path = os.path.join(os.path.dirname(file_path), recovered_filename)
                 else:
-                    raise ValueError("ファイル名が666+形式ではありません。")
+                    raise ValueError("ファイル名が666形式ではありません。")
 
                 if not is_set_ICR():
                     raise ValueError( "ICレコーダが選択されてません。")
@@ -721,6 +777,29 @@ def main(page: ft.Page):
         else:
             status_recover.value = f'recover file name:\n' + '\n'.join(selected_files)
         status_recover.update()
+
+    def update_info_split_files(e: ft.FilePickerResultEvent):
+        global filelist_split
+        # ファイル選択時にinfo_split_filesとfilelist_splitをクリア
+        info_split_files.value = ""
+        info_split_files.update()
+        filelist_split = []
+
+        selected_files = []
+        if e.files:
+            for file in e.files:
+                filename = os.path.basename(file.path)
+                if not check_filename_format(filename):
+                    info_split_files.value = f"× {filename}は666形式ではありません"
+                    info_split_files.update()
+                    return
+                selected_files.append(file.path)
+        
+        # 更新されたファイルリストをグローバル変数に保存
+        filelist_split = selected_files
+        # 選択されたファイルをinfo_split_filesに表示
+        info_split_files.value = '\n'.join(selected_files)
+        info_split_files.update()
 
 
     def datebox_change(e):
@@ -755,7 +834,6 @@ def main(page: ft.Page):
                 try:
                     if not check_filename_format(files[0]['filename']):
                         if len(files) == 1: # 単一ファイルの場合
-                            is_start = check_ICR_type(selected_ICR,is_group=False)
                             org_file_path = files[0]['file_path']
                             new_filename = get_renamed_sound(files[0],is_start)
                             new_file_path = os.path.join(dir_output, new_filename)
@@ -763,8 +841,6 @@ def main(page: ft.Page):
                             msg.extend(rename(from_file_path=org_file_path,to_file_path=new_file_path))
                             
                         else: # 同一録音（グループファイル）の場合
-                            # ICRとグループファイルの種類でis_startの設定が異なる
-                            is_start = check_ICR_type(selected_ICR,is_group=True)
                             if not checkbox_merge.value: # マージのチェックボックスしない（個別に設定）
                                 print(f'ICR={selected_ICR},Group=True,is_start={is_start}')
                                 # ここで newed_metadata を辞書に変換する必要がある
@@ -854,16 +930,89 @@ def main(page: ft.Page):
         info_modified_mtime.update()
 
 
+    def split_audio_files():
+        # 選択されたファイルがない場合はメッセージを表示して終了
+        if not filelist_split:
+            info_split_result.value = "分割するファイルが選択されていません。"
+            info_split_result.update()
+            return
+
+        msg = []
+        for file_path in filelist_split:
+            if not os.path.exists(file_path):
+                msg.append(f"ファイル {file_path} が見つかりません。")
+                continue
+
+            try:
+                # ファイル名から開始時刻と終了時刻を取得
+                start_epoch, stop_epoch = get_start_stop_from_666(os.path.basename(file_path))
+                
+                # 開始時刻から最も近い時間の切りの良い時刻を計算
+                start_dt = datetime.fromtimestamp(start_epoch)
+                current_hour = start_dt.replace(minute=0, second=0, microsecond=0)
+                
+                # 終了時刻までの1時間ごとの分割点を生成
+                split_points = []
+                current_time = current_hour
+                end_dt = datetime.fromtimestamp(stop_epoch)
+                
+                while current_time < end_dt:
+                    split_points.append(current_time)
+                    current_time += timedelta(hours=1)
+                
+                # 分割実行
+                for i in range(len(split_points)):
+                    start_time = split_points[i]
+                    if i < len(split_points) - 1:
+                        end_time = split_points[i + 1]
+                    else:
+                        end_time = end_dt
+                    
+                    # 出力ファイル名を生成
+                    output_filename = f"{start_time.strftime('%y%m%d_%H%M%S')}_{end_time.strftime('%H%M%S')}_{os.path.basename(file_path)}"
+                    output_path = os.path.join(os.path.dirname(file_path), output_filename)
+                    
+                    # ffmpegコマンドを構築
+                    start_offset = (start_time - start_dt).total_seconds()
+                    duration = (end_time - start_time).total_seconds()
+                    
+                    cmd = [
+                        'ffmpeg', '-i', file_path,
+                        '-ss', str(start_offset),
+                        '-t', str(duration),
+                        '-acodec', 'copy',
+                        output_path
+                    ]
+                    
+                    # ffmpegを実行
+                    result = subprocess.run(cmd, capture_output=False, text=True)
+                    if result.returncode == 0:
+                        msg.append(f"分割成功: {output_filename}")
+                        # 成功メッセージを表示
+                        info_split_result.value = f"分割成功: {output_filename}"
+                        info_split_result.update()
+                    else:
+                        msg.append(f"分割失敗: {output_filename}\nエラー: {result.stderr}")
+                
+            except Exception as e:
+                msg.append(f"エラーが発生しました: {str(e)}")
+        
+        # 結果を表示
+        info_split_result.value = '\n'.join(msg)
+        info_split_result.update()
+
     # ダイアローグの追加                
     dialogue_sounds_dir = ft.FilePicker(on_result=update_sounds_list_and_rename_list)
     dialogue_output_dir = ft.FilePicker(on_result=set_output_directory)
     dialogue_modify_mtime_file = ft.FilePicker(on_result=update_info_modify_mtime_files)
     dialogue_recover_filename = ft.FilePicker(on_result=update_info_recover_filename)
+    dialogue_split_audio_file = ft.FilePicker(on_result=update_info_split_files)
 
     page.overlay.append(dialogue_sounds_dir)
     page.overlay.append(dialogue_output_dir)
     page.overlay.append(dialogue_modify_mtime_file)
     page.overlay.append(dialogue_recover_filename)
+    page.overlay.append(dialogue_split_audio_file)
 
     # タイムスタンプの設定関係
     info_modify_files = ft.TextField(
@@ -876,6 +1025,15 @@ def main(page: ft.Page):
         value=""
     )
     info_recover_filename = ft.TextField(
+        text_size=10,
+        label="選択ファイル：",
+        multiline=True,
+        min_lines=4,
+        read_only=True,
+        max_lines=None,
+        value=""
+    )
+    info_split_files = ft.TextField(
         text_size=10,
         label="選択ファイル：",
         multiline=True,
@@ -1039,6 +1197,35 @@ def main(page: ft.Page):
                             ),
                         ]),
                         info_modified_mtime
+                    ])
+                ),
+            ),
+            ft.Tab(
+                text="音声分割",
+                icon=ft.icons.CONTENT_CUT_ROUNDED,
+                content=ft.Container(
+                    margin=20,
+                    content=ft.Column([
+                        ft.Text("音声ファイルを1時間ごとに分割します。"),
+                        ft.Text("分割は0分0秒ちょうどで行います。"),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "ファイル選択",
+                                icon=ft.icons.AUDIO_FILE_OUTLINED,
+                                on_click=lambda _: dialogue_split_audio_file.pick_files(
+                                    allow_multiple=True
+                                ),
+                            ),
+                        ]),
+                        info_split_files,
+                        ft.Row([
+                            ft.ElevatedButton(
+                                "1時間ごとに分割",
+                                icon=ft.icons.CONTENT_CUT_ROUNDED,
+                                on_click=lambda _: split_audio_files()
+                            ),
+                        ]),
+                        info_split_result
                     ])
                 ),
             ),

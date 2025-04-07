@@ -176,3 +176,5 @@ test/
 vendors/
 
 .specstory
+
+____nfc-rename/

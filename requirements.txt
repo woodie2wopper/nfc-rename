@@ -1,4 +1,4 @@
+ffmpeg-python>=0.2.0 flet==0.22.*
 flet>=0.22.0
 nfcpy>=1.0.4
 pillow>=10.2.0
-ffmpeg-python>=0.2.0 

@@ -9,7 +9,7 @@ SEPARATOR = ';' if platform.system() == 'Windows' else ':'
 # OSに応じたvendorsディレクトリをコピーする関数
 def copy_vendors():
     system = platform.system()
-    project_dir = os.path.join(os.getcwd(), "nfc-rename")
+    project_dir = os.getcwd()
     vendors_dir = os.path.join(project_dir, "vendors")
     
     if system == "Darwin":  # Mac
@@ -56,9 +56,8 @@ def copy_assets():
                 shutil.copy2(src_file, dst_file)
                 print(f"{png_file}をコピーしました")
         
-        # nfc-rename/assetsディレクトリをコピー
-        project_dir = os.path.join(root_dir, "nfc-rename")
-        assets_dir = os.path.join(project_dir, "assets")
+        # assetsディレクトリをコピー
+        assets_dir = os.path.join(root_dir, "assets")
         dist_assets_dir = os.path.join(dist_dir, "assets")
         
         if os.path.exists(assets_dir):
@@ -82,12 +81,12 @@ print(f"ビルドを開始します... OS: {platform.system()}, パス区切り:
 try:
     # PyInstallerで直接ビルド
     args = [
-        os.path.join("nfc-rename", "main.py"),  # nfc-renameディレクトリ内のmain.pyを指定
+        "main.py",  # ルートディレクトリ内のmain.pyを指定
         '--name=nfc-rename',
         '--onedir',
         '--windowed',
         '--clean',
-        '--add-data=' + os.path.join("nfc-rename", "vendors") + SEPARATOR + 'vendors',
+        '--add-data=' + os.path.join("vendors") + SEPARATOR + 'vendors',
         '--icon=' + os.path.join("assets", "icon.ico"),  # Windowsの場合
     ]
     
@@ -97,7 +96,7 @@ try:
             args.append('--add-data=' + png_file + SEPARATOR + '.')
     
     # アセットディレクトリを追加（存在する場合）
-    assets_dir = os.path.join("nfc-rename", "assets")
+    assets_dir = os.path.join("assets")
     if os.path.exists(assets_dir):
         args.append('--add-data=' + assets_dir + SEPARATOR + 'assets')
     

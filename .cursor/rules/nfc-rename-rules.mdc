@@ -1,6 +1,11 @@
 ---
 description: 
 globs: 
+alwaysApply: false
+---
+---
+description: 
+globs: 
 alwaysApply: true
 ---
 ---
@@ -298,6 +303,11 @@ README.mdファイルでは以下の構造を維持する：
 
       7. テスト
 
+## 文字コードについて
+
+- Windows/OSX/Linuxのすべてで統一的に取り扱いたい。
+
+- ＵＴＦ－８＋ＵＮＩＣＯＤＥ　ＮＦＣに統一してほしい
 
 7. 貢献
 

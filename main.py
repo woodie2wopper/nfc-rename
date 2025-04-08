@@ -1291,7 +1291,8 @@ try:
     # Fletアプリケーションの起動
     ft.app(
         target=main,
-        assets_dir="assets"
+        assets_dir="assets",
+        view=ft.AppView.FLET_APP  # FLET_APPはネイティブアプリケーションとして実行
     )
     logging.debug('アプリケーション正常終了')
 except Exception as e:

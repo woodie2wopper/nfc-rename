@@ -78,36 +78,38 @@ def copy_assets():
     print("アセットファイルのコピーが完了しました")
 
 # macOS用に.appバンドルを修正する関数
-def fix_macos_bundle():
+def fix_macos_bundle(app_bundle_path):
+    """macOSアプリバンドルの修正 - 簡略化バージョン"""
+    print("macOSバンドルを修正しています...")
+    
     try:
-        # アプリバンドルのパス
-        app_bundle = os.path.join(os.getcwd(), "dist", "nfc-rename.app")
-        
-        # Info.plistの置き換え
+        # Info.plistを修正
+        info_plist_path = os.path.join(app_bundle_path, "Contents", "Info.plist")
         if os.path.exists("custom_info.plist"):
-            info_plist_path = os.path.join(app_bundle, "Contents", "Info.plist")
-            shutil.copy2("custom_info.plist", info_plist_path)
+            shutil.copy("custom_info.plist", info_plist_path)
             print("カスタムInfo.plistをコピーしました")
-            
-            # アイコンが正しく参照されるようにリソースディレクトリに直接コピー
-            icon_path = os.path.join(os.getcwd(), "assets", "icon.icns")
-            if os.path.exists(icon_path):
-                icon_dest = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
-                shutil.copy2(icon_path, icon_dest)
-                print("icon.icnsをリソースディレクトリに直接コピーしました")
         
-        # 不要な自動生成アイコンを削除
-        resources_dir = os.path.join(app_bundle, "Contents", "Resources")
-        for file in os.listdir(resources_dir):
-            if file.startswith("generated-") and file.endswith(".icns"):
-                os.remove(os.path.join(resources_dir, file))
-                print(f"不要なアイコン {file} を削除しました")
-                
-        # アプリケーションのキャッシュをクリア
-        subprocess.run(["touch", app_bundle], check=True)
+        # アイコンをリソースディレクトリに直接コピー
+        resources_dir = os.path.join(app_bundle_path, "Contents", "Resources")
+        icon_dest = os.path.join(resources_dir, "icon.icns")
+        shutil.copy("assets/icon.icns", icon_dest)
+        print("icon.icnsをリソースディレクトリに直接コピーしました")
+        
+        # 実行権限を付与
+        executable_path = os.path.join(app_bundle_path, "Contents", "MacOS", "nfc-rename")
+        subprocess.run(["chmod", "+x", executable_path], check=True)
+        print("実行可能ファイルに実行権限を付与しました")
+        
+        # 拡張属性を削除 (Gatekeeperの制限を回避)
+        subprocess.run(["xattr", "-cr", app_bundle_path], check=True)
+        print("拡張属性を削除しました")
+        
+        # アプリケーションをリフレッシュ
+        subprocess.run(["touch", app_bundle_path], check=True)
         print("アプリケーションバンドルのタイムスタンプを更新しました")
+        
     except Exception as e:
-        print(f"macOSバンドルの修正中にエラーが発生しました: {e}")
+        print(f"macOSバンドルの修正中にエラー: {e}")
 
 print(f"ビルドを開始します... OS: {platform.system()}, パス区切り: {SEPARATOR}")
 
@@ -119,6 +121,7 @@ try:
         '--onedir',
         '--windowed',
         '--clean',
+        '--noconfirm',  # 確認なしで実行するオプションを追加
         '--add-data=' + os.path.join("vendors") + SEPARATOR + 'vendors',
     ]
     
@@ -131,6 +134,15 @@ try:
         args.append('--icon=' + os.path.join("assets", "icon.icns"))
         # macOSのDock表示問題を解決するためのバンドルID設定
         args.append('--osx-bundle-identifier=com.osaka.nfcrename')
+        # サンドボックスと署名の問題を回避
+        args.append('--osx-entitlements-file=entitlements.plist')
+        args.append('--disable-windowed-traceback')
+    
+    # 重要なモジュールを明示的にインポート
+    args.append('--hidden-import=tkinter')
+    args.append('--hidden-import=PIL._tkinter_finder')
+    args.append('--hidden-import=asyncio')
+    args.append('--hidden-import=websockets.legacy')
     
     # PNGファイルを追加
     for png_file in ["security-0.png", "security-1.png"]:
@@ -153,7 +165,8 @@ try:
     
     # macOSの場合はバンドルを修正
     if platform.system() == 'Darwin':
-        fix_macos_bundle()
+        app_bundle_path = os.path.join(os.getcwd(), "dist", "nfc-rename.app")
+        fix_macos_bundle(app_bundle_path)
     
     print("ビルド完了!")
 except Exception as e:

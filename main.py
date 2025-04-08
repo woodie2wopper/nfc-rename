@@ -10,6 +10,7 @@ import sys
 import ffmpeg
 import subprocess
 import json
+import platform
 
 
 class StreamToLogger:
@@ -72,7 +73,6 @@ dict_ICR = {
     'DR-05': 'STOP',
     'dummy_stop': 'STOP'
 }
-import platform
 
 def get_os():
     """
@@ -1275,8 +1275,58 @@ def main(page: ft.Page):
 
 try:
     logging.debug('アプリケーション起動開始')
-    ft.app(target=main, view=ft.AppView.DESKTOP)
+    # AppViewの利用可能な値を確認
+    logging.debug(f"利用可能なAppView: {[member.name for member in ft.AppView]}")
+    
+    # アプリケーション実行環境の情報をログに記録
+    logging.info(f"OS: {platform.system()} {platform.release()}")
+    logging.info(f"Python: {sys.version}")
+    logging.info(f"環境変数PATH: {os.environ.get('PATH', '未設定')}")
+    
+    # デバッグ情報を記録
+    import datetime
+    logging.debug(f"現在時刻: {datetime.datetime.now()}")
+    logging.debug(f"ログファイル: {log_file}")
+    
+    # Fletアプリケーションの起動
+    ft.app(
+        target=main,
+        assets_dir="assets"
+    )
     logging.debug('アプリケーション正常終了')
 except Exception as e:
     logging.error(f'アプリケーション実行中にエラーが発生: {str(e)}')
     logging.exception("詳細なスタックトレース:")
+    
+    # エラー情報をファイルに保存（デバッグ用）
+    try:
+        import datetime
+        import traceback
+        error_log_path = os.path.join(os.path.expanduser('~'), '.nfc', 'error.log')
+        os.makedirs(os.path.dirname(error_log_path), exist_ok=True)
+        with open(error_log_path, 'w', encoding='utf-8') as f:
+            f.write(f"エラー発生時刻: {datetime.datetime.now()}\n")
+            f.write(f"エラー内容: {str(e)}\n")
+            f.write(f"OS: {platform.system()} {platform.release()}\n")
+            f.write(f"Python: {sys.version}\n")
+            f.write(traceback.format_exc())
+    except Exception as write_error:
+        logging.error(f"エラーログ保存中にエラー発生: {write_error}")
+    
+    # macOS環境ではダイアログを表示
+    if platform.system() == "Darwin":
+        try:
+            subprocess.run(["osascript", "-e", f'display dialog "アプリケーションエラー: {str(e)}" buttons {{"OK"}} default button "OK" with icon stop'])
+        except Exception:
+            pass
+
+def fix_macos_bundle():
+    # 既存のコード...
+    
+    # コード署名の再適用
+    subprocess.run([
+        "codesign", "--force", "--deep", "--sign", "-", 
+        "--entitlements", "entitlements.plist",
+        app_bundle
+    ], check=True)
+    print("アプリケーションの署名を再適用しました")

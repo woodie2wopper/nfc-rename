@@ -12,7 +12,6 @@ import subprocess
 import json
 import platform
 
-
 class StreamToLogger:
     """
     標準出力または標準エラーのメッセージをログファイルに書き込むためのクラス

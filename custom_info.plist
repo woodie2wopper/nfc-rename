@@ -6,8 +6,6 @@
     <string>nfc-rename</string>
     <key>CFBundleExecutable</key>
     <string>nfc-rename</string>
-    <key>CFBundleIconFile</key>
-    <string>icon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>com.osaka.nfcrename</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -44,7 +42,7 @@
     <key>LSBackgroundOnly</key>
     <false/>
     <key>LSUIElement</key>
-    <false/>
+    <true/>
     <key>NSQuitAlwaysKeepsWindows</key>
     <false/>
     <key>NSAppSleepDisabled</key>

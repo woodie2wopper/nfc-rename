@@ -92,16 +92,16 @@ def fix_macos_bundle(app_bundle_path):
             shutil.copy("custom_info.plist", info_plist_path)
             print("カスタムInfo.plistをコピーしました")
 
-        # アイコンをリソースディレクトリに直接コピー
-        resources_dir = os.path.join(app_bundle_path, "Contents", "Resources")
-        # Resourcesディレクトリがなければ作成
-        os.makedirs(resources_dir, exist_ok=True)
-        icon_dest = os.path.join(resources_dir, "icon.icns")
-        if os.path.exists("assets/icon.icns"):
-            shutil.copy("assets/icon.icns", icon_dest)
-            print("icon.icnsをリソースディレクトリに直接コピーしました")
-        else:
-            print("警告: assets/icon.icns が見つかりません。")
+        # アイコンをリソースディレクトリに直接コピーする処理を削除
+        # resources_dir = os.path.join(app_bundle_path, "Contents", "Resources")
+        # # Resourcesディレクトリがなければ作成
+        # os.makedirs(resources_dir, exist_ok=True)
+        # icon_dest = os.path.join(resources_dir, "icon.icns")
+        # if os.path.exists("assets/icon.icns"):
+        #     shutil.copy("assets/icon.icns", icon_dest)
+        #     print("icon.icnsをリソースディレクトリに直接コピーしました")
+        # else:
+        #     print("警告: assets/icon.icns が見つかりません。")
 
         # 実行権限を付与
         executable_path = os.path.join(app_bundle_path, "Contents", "MacOS", "nfc-rename")

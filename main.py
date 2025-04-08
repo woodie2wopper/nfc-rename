@@ -90,18 +90,38 @@ def set_ffmpeg_path():
     :return: ffmpegのパスを文字列で返す
     """
     os_name = get_os()
-    print("現在のディレクトリ:", os.getcwd())
+    # 実行ファイルのディレクトリを取得
+    if getattr(sys, 'frozen', False):
+        # PyInstallerでビルドされた場合
+        application_path = os.path.dirname(sys.executable)
+    else:
+        # 通常のPython実行の場合
+        application_path = os.path.dirname(os.path.abspath(__file__))
+    
+    # プロジェクトのルートディレクトリを取得（distディレクトリの外）
+    root_dir = os.path.dirname(application_path)
+    if os.path.basename(root_dir) == 'dist':
+        root_dir = os.path.dirname(root_dir)
+    
+    print("アプリケーションパス:", application_path)
+    print("ルートディレクトリ:", root_dir)
+    
     if os_name == 'Darwin':  # MacOSXの場合
-        return './vendors/for_Mac/'
+        return os.path.join(root_dir, 'vendors', 'for_Mac')
     elif os_name == 'Windows':  # Windowsの場合
-        return './vendors/for_Win/'
+        return os.path.join(root_dir, 'vendors', 'for_Win')
     else:
         raise EnvironmentError('サポートされていないOSです。')
 
 ffmpeg_path = set_ffmpeg_path()
-ffmpeg_command = os.path.join(ffmpeg_path, "ffmpeg")
-ffprobe_command = os.path.join(ffmpeg_path, "ffprobe")
-ffplay_command = os.path.join(ffmpeg_path, "ffplay")
+ffmpeg_command = os.path.join(ffmpeg_path, "ffmpeg.exe")
+ffprobe_command = os.path.join(ffmpeg_path, "ffprobe.exe")
+ffplay_command = os.path.join(ffmpeg_path, "ffplay.exe")
+
+# ffmpegのパスをログに記録
+logging.info(f"ffmpeg_path: {ffmpeg_path}")
+logging.info(f"ffmpeg_command: {ffmpeg_command}")
+logging.info(f"ffmpeg_command exists: {os.path.exists(ffmpeg_command)}")
 
 selected_ICR=''
 name_site=''
@@ -950,71 +970,102 @@ def main(page: ft.Page):
 
 
     def split_audio_files():
-        # 選択されたファイルがない場合はメッセージを表示して終了
+        global filelist_split
+        msg = []
+        
         if not filelist_split:
             info_split_result.value = "分割するファイルが選択されていません。"
             info_split_result.update()
             return
-
-        msg = []
+        
+        # ffmpegコマンドの存在確認
+        if not os.path.exists(ffmpeg_command):
+            error_msg = f"ffmpegコマンドが見つかりません: {ffmpeg_command}"
+            logging.error(error_msg)
+            info_split_result.value = error_msg
+            info_split_result.update()
+            return
+        
         for file_path in filelist_split:
-            if not os.path.exists(file_path):
-                msg.append(f"ファイル {file_path} が見つかりません。")
-                continue
-
             try:
+                # ファイルの存在確認
+                if not os.path.exists(file_path):
+                    error_msg = f"ファイルが見つかりません: {file_path}"
+                    logging.error(error_msg)
+                    msg.append(error_msg)
+                    continue
+                
                 # ファイル名から開始時刻と終了時刻を取得
-                start_epoch, stop_epoch = get_start_stop_from_666(os.path.basename(file_path))
+                filename = os.path.basename(file_path)
+                start_epoch, stop_epoch = get_start_stop_from_666(filename)
                 
-                # 開始時刻から最も近い時間の切りの良い時刻を計算
+                # 開始時刻と終了時刻をdatetimeオブジェクトに変換
                 start_dt = datetime.datetime.fromtimestamp(start_epoch)
-                current_hour = start_dt.replace(minute=0, second=0, microsecond=0)
-                
-                # 終了時刻までの1時間ごとの分割点を生成
-                split_points = []
-                current_time = current_hour
                 end_dt = datetime.datetime.fromtimestamp(stop_epoch)
                 
+                # 1時間ごとの区切り時刻を生成
+                current_time = start_dt
                 while current_time < end_dt:
-                    split_points.append(current_time)
-                    current_time += datetime.timedelta(hours=1)
-                
-                # 分割実行
-                for i in range(len(split_points)):
-                    start_time = split_points[i]
-                    if i < len(split_points) - 1:
-                        end_time = split_points[i + 1]
-                    else:
-                        end_time = end_dt
-                    
-                    # 出力ファイル名を生成
-                    output_filename = f"{start_time.strftime('%y%m%d_%H%M%S')}_{end_time.strftime('%H%M%S')}_{os.path.basename(file_path)}"
-                    output_path = os.path.join(os.path.dirname(file_path), output_filename)
-                    
-                    # ffmpegコマンドを構築
-                    start_offset = (start_time - start_dt).total_seconds()
-                    duration = (end_time - start_time).total_seconds()
-                    
-                    cmd = [
-                        'ffmpeg', '-i', file_path,
-                        '-ss', str(start_offset),
-                        '-t', str(duration),
-                        '-acodec', 'copy',
-                        output_path
-                    ]
-                    
-                    # ffmpegを実行
-                    result = subprocess.run(cmd, capture_output=False, text=True)
-                    if result.returncode == 0:
-                        msg.append(f"分割成功: {output_filename}")
-                        # 成功メッセージを表示
-                        info_split_result.value = f"分割成功: {output_filename}"
-                        info_split_result.update()
-                    else:
-                        msg.append(f"分割失敗: {output_filename}\nエラー: {result.stderr}")
-                
+                    try:
+                        # 次の区切り時刻を計算（1時間後、または終了時刻の早い方）
+                        next_time = min(current_time + datetime.timedelta(hours=1), end_dt)
+                        
+                        # 出力ファイル名を生成
+                        output_filename = get_666(filename, 
+                                               int(current_time.timestamp()),
+                                               int(next_time.timestamp()),
+                                               name_site)
+                        output_path = os.path.join(os.path.dirname(file_path), output_filename)
+                        
+                        # 分割の開始オフセットと継続時間を計算
+                        start_offset = (current_time - start_dt).total_seconds()
+                        duration = (next_time - current_time).total_seconds()
+                        
+                        # ffmpegコマンドを構築
+                        cmd = [
+                            ffmpeg_command,  # グローバル変数を使用
+                            '-i', file_path,
+                            '-ss', str(start_offset),
+                            '-t', str(duration),
+                            '-acodec', 'copy',
+                            output_path
+                        ]
+                        
+                        # ffmpegコマンドの存在を再確認
+                        if not os.path.exists(ffmpeg_command):
+                            error_msg = f"ffmpegコマンドが見つかりません: {ffmpeg_command}"
+                            logging.error(error_msg)
+                            msg.append(error_msg)
+                            break
+                        
+                        # ffmpegを実行
+                        logging.debug(f'ffmpegコマンド実行: {" ".join(cmd)}')
+                        result = subprocess.run(cmd, capture_output=True, text=True)
+                        
+                        if result.returncode == 0:
+                            success_msg = f"分割成功: {output_filename}"
+                            logging.info(success_msg)
+                            msg.append(success_msg)
+                            # 成功メッセージを表示
+                            info_split_result.value = f"分割成功: {output_filename}"
+                            info_split_result.update()
+                        else:
+                            error_msg = f"分割失敗: {output_filename}\nエラー: {result.stderr}"
+                            logging.error(error_msg)
+                            msg.append(error_msg)
+                        
+                        # 次の区切り時刻に進む
+                        current_time = next_time
+                    except Exception as e:
+                        error_msg = f"分割処理中にエラーが発生しました: {str(e)}"
+                        logging.error(error_msg)
+                        msg.append(error_msg)
+                        break
+            
             except Exception as e:
-                msg.append(f"エラーが発生しました: {str(e)}")
+                error_msg = f"エラーが発生しました: {str(e)}"
+                logging.error(error_msg)
+                msg.append(error_msg)
         
         # 結果を表示
         info_split_result.value = '\n'.join(msg)

@@ -331,6 +331,16 @@ def main(page: ft.Page):
     page.scroll=True
     logging.debug('ページ設定完了')
 
+    # --- client_storageからサイト名を読み込み ---
+    global name_site
+    cached_site_name = page.client_storage.get("cached_site_name")
+    if cached_site_name:
+        name_site = cached_site_name
+        logging.info(f"キャッシュからサイト名を読み込みました: {name_site}")
+    else:
+        name_site = "" # キャッシュがない場合は空文字に初期化
+    # -------------------------------------------
+
     # flet関連
     status_rename_result = ft.TextField(
         text_size=10,
@@ -383,7 +393,7 @@ def main(page: ft.Page):
         status_rename_result.value = ""
         status_rename_result.update()
 
-    info_name_site = ft.Text(size=10)
+    info_name_site = ft.Text(size=10, value=name_site) # 初期値を設定
     info_selected_ICR = ft.Text(size=10)
 
     # dict_ICRから動的に生成する。
@@ -421,11 +431,19 @@ def main(page: ft.Page):
         )
 
 
+    # --- サイト名入力フィールドの事前定義を削除 ---
+    # site_name_field = ft.TextField(...)
+    # ------------------------------------------
+
     def changed_name_site(e):
         global name_site
         name_site=e.control.value
         info_name_site.value = name_site
         info_name_site.update()
+        # --- client_storageにサイト名を保存 ---
+        page.client_storage.set("cached_site_name", name_site)
+        logging.info(f"サイト名をキャッシュに保存しました: {name_site}")
+        # ------------------------------------
         print(f'name_site:{name_site}')
 
 
@@ -1065,16 +1083,18 @@ def main(page: ft.Page):
                     content=ft.Column([
                         ft.Text(msg_rename),
                         ft.Row([
+                            # --- TextFieldを直接定義し、初期値を設定 ---
                             ft.TextField(
                                 icon=ft.icons.PLACE,
-                                label = "①サイト名（県名+市名+通し番号）",
+                                label = "①サイト名（県名+市名）",
                                 autofocus = True,
                                 text_size=14,
-                                hint_text="福井県越前市0(通し番号は０始まり)",
+                                hint_text="福井県越前市",
                                 disabled= False,
-                                value="",
+                                value=name_site, # キャッシュ or 空文字で初期化
                                 on_change=changed_name_site,
                             ),
+                            # -------------------------------------
                             info_name_site,
                         ]),
                         ft.Row([
@@ -1252,10 +1272,12 @@ def main(page: ft.Page):
                         ft.Text(" - ファイル名復元： 666形式のファイル名をオリジナルのファイル名に復元します"),
                         ft.Text(" - タイムスタンプ変更： ファイルのタイムスタンプ（最終変更日時:mtime)を変更します"),
                         ft.Text(" - 音声分割： 666+形式のファイルを1時間ごとに分割します"),
+                        ft.Text(" - サイト名キャッシュ: 入力したサイト名は次回起動時に自動で読み込まれます。"),
                         ft.Text("【ヒント】"),
                         ft.Text(" - 同一録音の再設定は、オリジナルファイル名を複数選択し、同じmtimeを設定してください。これは同じmtimeを持ち、連続するファイル名の場合に有効です。"),
                         ft.Text(" - 作成日(Birthday)は変更しません。"),
                         ft.Text(" - Olympus: DM-750とLS-7は2GBを超えるファイルが自動分割されます。このとき生成されたファイルはすべて同じタイムスタンプ（録音開始時刻のmtime）を持ちます。そのため、同じ録音ファイルを同一グループとしファイル名の若い順にファイル名を生成します。なおDR-05(TASCAM）も自動分割されますが、タイムスタンプは録音終了時刻が設定されています。"),
+                        ft.Markdown("詳細はこちら: [GitHub Repository](https://github.com/woodie2wopper/nfc-rename)"),
                     ]),
                 ),
             )

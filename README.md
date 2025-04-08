@@ -13,6 +13,7 @@ NFC-Rename is a desktop application (Mac/Windows) that manages recording file na
 ## 機能：
 
 - nfc録音調査用にファイルのリネーム、ファイル名の復元、タイムスタンプの設定、音声分割ができます。
+- **サイト名キャッシュ**: 入力したサイト名は次回起動時に自動で読み込まれます。
 
 #### リネーム：
 

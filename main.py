@@ -13,6 +13,7 @@ import subprocess
 import json
 import platform
 import math
+import unicodedata
 
 class StreamToLogger:
     """
@@ -1477,3 +1478,82 @@ def fix_macos_bundle():
         app_bundle
     ], check=True)
     print("アプリケーションの署名を再適用しました")
+
+def normalize_unicode(text, form='NFC'):
+    """
+    Unicodeテキストを指定された正規化形式に変換する
+    - NFC: 正準等価性による合成（推奨）
+    - NFD: 正準等価性による分解
+    - NFKC: 互換等価性による合成
+    - NFKD: 互換等価性による分解
+    """
+    if text is None:
+        return None
+    return unicodedata.normalize(form, text)
+
+def safe_filename(filename):
+    """
+    ファイル名を安全に処理し、NFCに正規化する
+    """
+    # Unicode正規化（NFC形式）
+    normalized = normalize_unicode(filename, 'NFC')
+    
+    # OSごとの禁止文字を置換
+    if platform.system() == 'Windows':
+        # Windowsでの禁止文字を置換
+        normalized = re.sub(r'[\\/:*?"<>|]', '_', normalized)
+    elif platform.system() == 'Darwin' or platform.system() == 'Linux':
+        # macOS/Linuxでの禁止文字を置換
+        normalized = normalized.replace('/', '_')
+    
+    return normalized
+
+def safe_path(path):
+    """
+    OSに依存しないパス処理を行う
+    """
+    # パス区切り文字を正規化
+    normalized_path = os.path.normpath(path)
+    
+    # パスの各部分を取得
+    parts = []
+    head, tail = os.path.split(normalized_path)
+    while tail:
+        parts.append(safe_filename(tail))
+        head, tail = os.path.split(head)
+    if head:
+        parts.append(head)
+    
+    # 逆順にして結合
+    parts.reverse()
+    return os.path.join(*parts)
+
+def read_file(file_path):
+    """
+    ファイルをUTF-8で読み込む
+    """
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+def write_file(file_path, content):
+    """
+    ファイルをUTF-8で書き込む
+    """
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+def run_command(cmd, input_data=None):
+    """
+    コマンドを実行し、入出力をUTF-8で処理する
+    """
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        stdin=subprocess.PIPE if input_data else None,
+        universal_newlines=True,  # テキストモード
+        encoding='utf-8'  # UTF-8を明示指定
+    )
+    
+    stdout, stderr = process.communicate(input=input_data)
+    return process.returncode, stdout, stderr

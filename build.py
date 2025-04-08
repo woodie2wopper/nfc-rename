@@ -2,6 +2,7 @@ import os
 import shutil
 import platform
 import PyInstaller.__main__
+import subprocess
 
 # OSに合わせてパス区切り文字を設定
 SEPARATOR = ';' if platform.system() == 'Windows' else ':'
@@ -76,6 +77,38 @@ def copy_assets():
     
     print("アセットファイルのコピーが完了しました")
 
+# macOS用に.appバンドルを修正する関数
+def fix_macos_bundle():
+    try:
+        # アプリバンドルのパス
+        app_bundle = os.path.join(os.getcwd(), "dist", "nfc-rename.app")
+        
+        # Info.plistの置き換え
+        if os.path.exists("custom_info.plist"):
+            info_plist_path = os.path.join(app_bundle, "Contents", "Info.plist")
+            shutil.copy2("custom_info.plist", info_plist_path)
+            print("カスタムInfo.plistをコピーしました")
+            
+            # アイコンが正しく参照されるようにリソースディレクトリに直接コピー
+            icon_path = os.path.join(os.getcwd(), "assets", "icon.icns")
+            if os.path.exists(icon_path):
+                icon_dest = os.path.join(app_bundle, "Contents", "Resources", "icon.icns")
+                shutil.copy2(icon_path, icon_dest)
+                print("icon.icnsをリソースディレクトリに直接コピーしました")
+        
+        # 不要な自動生成アイコンを削除
+        resources_dir = os.path.join(app_bundle, "Contents", "Resources")
+        for file in os.listdir(resources_dir):
+            if file.startswith("generated-") and file.endswith(".icns"):
+                os.remove(os.path.join(resources_dir, file))
+                print(f"不要なアイコン {file} を削除しました")
+                
+        # アプリケーションのキャッシュをクリア
+        subprocess.run(["touch", app_bundle], check=True)
+        print("アプリケーションバンドルのタイムスタンプを更新しました")
+    except Exception as e:
+        print(f"macOSバンドルの修正中にエラーが発生しました: {e}")
+
 print(f"ビルドを開始します... OS: {platform.system()}, パス区切り: {SEPARATOR}")
 
 try:
@@ -117,6 +150,10 @@ try:
     
     # アセットファイルをコピー
     copy_assets()
+    
+    # macOSの場合はバンドルを修正
+    if platform.system() == 'Darwin':
+        fix_macos_bundle()
     
     print("ビルド完了!")
 except Exception as e:

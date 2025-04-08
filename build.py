@@ -87,8 +87,17 @@ try:
         '--windowed',
         '--clean',
         '--add-data=' + os.path.join("vendors") + SEPARATOR + 'vendors',
-        '--icon=' + os.path.join("assets", "icon.ico"),  # Windowsの場合
     ]
+    
+    # OS別の設定
+    if platform.system() == 'Windows':
+        # Windowsの場合はicoファイルを使用
+        args.append('--icon=' + os.path.join("assets", "icon.ico"))
+    elif platform.system() == 'Darwin':
+        # macOSの場合はicnsファイルを使用
+        args.append('--icon=' + os.path.join("assets", "icon.icns"))
+        # macOSのDock表示問題を解決するためのバンドルID設定
+        args.append('--osx-bundle-identifier=com.osaka.nfcrename')
     
     # PNGファイルを追加
     for png_file in ["security-0.png", "security-1.png"]:

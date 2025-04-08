@@ -178,3 +178,12 @@ vendors/
 .specstory
 
 ____nfc-rename/
+
+assets/
+temp_icons/
+
+
+# ビルドファイル
+build/
+dist/
+*.spec

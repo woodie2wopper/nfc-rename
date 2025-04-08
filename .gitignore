@@ -173,13 +173,13 @@ cython_debug/
 # FLET/Flutter
 nfc-rename/flet-build-template/{{cookiecutter.out_dir}}/
 test/
-vendors/
+#vendors/
 
 .specstory
 
 ____nfc-rename/
 
-assets/
+# assets/
 temp_icons/
 
 

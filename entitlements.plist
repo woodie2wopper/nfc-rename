@@ -8,11 +8,14 @@
     <true/>
     <key>com.apple.security.network.server</key>
     <true/>
-    <key>com.apple.security.files.user-selected.read-write</key>
+    
+    <!-- ファイルアクセス関連の権限を一時的にコメントアウト -->
+    <!-- <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
     <key>com.apple.security.files.downloads.read-write</key>
-    <true/>
-    <!-- com.apple.security.files.all は削除 -->
+    <true/> -->
+    <!-- com.apple.security.files.all は削除済み -->
+    
     <!-- device.* はアプリが必要とするか不明なため一旦コメントアウト -->
     <!-- <key>com.apple.security.device.audio-input</key>
     <true/>
@@ -33,23 +36,23 @@
     <key>com.apple.security.cs.disable-executable-page-protection</key>
     <true/> -->
     
-    <!-- automation.apple-events は削除 -->
+    <!-- automation.apple-events は削除済み -->
     <!-- <key>com.apple.security.automation.apple-events</key>
     <true/> -->
     
-    <!-- get-task-allow は削除 -->
+    <!-- get-task-allow は削除済み -->
     <!-- <key>com.apple.security.get-task-allow</key>
     <true/> -->
     
-    <!-- 一時的なファイルアクセス例外 (必要なものに絞る) -->
-    <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+    <!-- 一時的なファイルアクセス例外もコメントアウト -->
+    <!-- <key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
     <array>
         <string>/.flet/</string>
         <string>/.nfc/</string>
-        <!-- <string>/Downloads/</string>
+        <string>/Downloads/</string>
         <string>/Documents/</string>
         <string>/Desktop/</string>
-        <string>/Music/</string> -->
-    </array>
+        <string>/Music/</string>
+    </array> -->
 </dict>
 </plist> 

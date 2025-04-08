@@ -3,7 +3,8 @@ import flet as ft
 import os
 import shutil
 import wave
-from datetime import timezone, datetime, timedelta
+import datetime
+from datetime import timezone, timedelta
 import re
 import logging
 import sys
@@ -180,17 +181,17 @@ def normalize(x):
 
 def convert_epoch_to_string(epoch_time):
     epoch_time = normalize(epoch_time)
-    return datetime.fromtimestamp(epoch_time).strftime('%Y-%m-%d %H:%M:%S')
+    return datetime.datetime.fromtimestamp(epoch_time).strftime('%Y-%m-%d %H:%M:%S')
 
 
 def convert_epoch_to_66(epoch_time):
     epoch_time = normalize(epoch_time)
-    return datetime.fromtimestamp(epoch_time).strftime('%y%m%d_%H%M%S')
+    return datetime.datetime.fromtimestamp(epoch_time).strftime('%y%m%d_%H%M%S')
 
 
 def convert_epoch_to_x6(epoch_time):
     epoch_time = normalize(epoch_time)
-    return datetime.fromtimestamp(epoch_time).strftime('_%H%M%S')
+    return datetime.datetime.fromtimestamp(epoch_time).strftime('_%H%M%S')
 
 
 def convert_epoch_to_666(start_epoch, stop_epoch):
@@ -240,8 +241,8 @@ def get_start_stop_from_666(filename):
         start_str = f"{date_str}_{start_time}"
         stop_str = f"{date_str}_{stop_time}"
         # 日付と時刻の文字列をdatetimeオブジェクトに変換
-        start_dt = datetime.strptime(start_str, '%y%m%d_%H%M%S')
-        stop_dt = datetime.strptime(stop_str, '%y%m%d_%H%M%S')
+        start_dt = datetime.datetime.strptime(start_str, '%y%m%d_%H%M%S')
+        stop_dt = datetime.datetime.strptime(stop_str, '%y%m%d_%H%M%S')
         # datetimeオブジェクトからエポックタイムに変換
         start_epoch = int(start_dt.timestamp())
         stop_epoch = int(stop_dt.timestamp())
@@ -660,7 +661,7 @@ def main(page: ft.Page):
             for file in e.files:
                 mtime = os.path.getmtime(file.path)
                 # mtimeを人が読める形式に変換
-                readable_mtime = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+                readable_mtime = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
                 filelist_remtime.append(file.path)
                 selected_files_mtime.append(f"{readable_mtime}: {file.name}")
                 msg.append(f"{readable_mtime}: {file.name}")
@@ -721,7 +722,7 @@ def main(page: ft.Page):
                 # ファイルのmtimeを取得
                 mtime = os.path.getmtime(file.path)
                 # mtimeを人が読める形式に変換
-                readable_mtime = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S.%f')
+                readable_mtime = datetime.datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S.%f')
                 selected_files.append(f"{readable_mtime} {file.name}")
         
         info_recover_filename.value = '\n'.join(selected_files)
@@ -899,10 +900,10 @@ def main(page: ft.Page):
             # datetime_strのフォーマットを判定し、対応するフォーマットで日時をパースしてエポック秒に変換するコード
             try:
                 # "%Y%m%d %H%M%S"のフォーマットでパースを試みる
-                datetime_obj = datetime.strptime(datetime_str, "%y%m%d %H%M%S")
+                datetime_obj = datetime.datetime.strptime(datetime_str, "%y%m%d %H%M%S")
             except ValueError:
                 # 失敗した場合は"%Y-%m-%d %H:%M:%S"のフォーマットでパースを試みる
-                datetime_obj = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
+                datetime_obj = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
             # タイムゾーンを設定
             datetime_obj = datetime_obj.replace(tzinfo=tz_info)
             # エポック秒に変換
@@ -917,7 +918,7 @@ def main(page: ft.Page):
         for file_path in filelist_remtime:
             if file_path:  # 空の行を無視
                 try:
-                    datetime_from_epoch = datetime.fromtimestamp(epoch_seconds, tz_info)
+                    datetime_from_epoch = datetime.datetime.fromtimestamp(epoch_seconds, tz_info)
                     msg.extend(remtime(file_path,datetime_from_epoch.timestamp()))
                     file_name = os.path.basename(file_path)
                     mtime_str = datetime_from_epoch.strftime("%Y-%m-%d %H:%M:%S")
@@ -948,17 +949,17 @@ def main(page: ft.Page):
                 start_epoch, stop_epoch = get_start_stop_from_666(os.path.basename(file_path))
                 
                 # 開始時刻から最も近い時間の切りの良い時刻を計算
-                start_dt = datetime.fromtimestamp(start_epoch)
+                start_dt = datetime.datetime.fromtimestamp(start_epoch)
                 current_hour = start_dt.replace(minute=0, second=0, microsecond=0)
                 
                 # 終了時刻までの1時間ごとの分割点を生成
                 split_points = []
                 current_time = current_hour
-                end_dt = datetime.fromtimestamp(stop_epoch)
+                end_dt = datetime.datetime.fromtimestamp(stop_epoch)
                 
                 while current_time < end_dt:
                     split_points.append(current_time)
-                    current_time += timedelta(hours=1)
+                    current_time += datetime.timedelta(hours=1)
                 
                 # 分割実行
                 for i in range(len(split_points)):
@@ -1283,7 +1284,6 @@ try:
     logging.info(f"環境変数PATH: {os.environ.get('PATH', '未設定')}")
     
     # デバッグ情報を記録
-    import datetime
     logging.debug(f"現在時刻: {datetime.datetime.now()}")
     logging.debug(f"ログファイル: {log_file}")
     
@@ -1300,7 +1300,6 @@ except Exception as e:
     
     # エラー情報をファイルに保存（デバッグ用）
     try:
-        import datetime
         import traceback
         error_log_path = os.path.join(os.path.expanduser('~'), '.nfc', 'error.log')
         os.makedirs(os.path.dirname(error_log_path), exist_ok=True)

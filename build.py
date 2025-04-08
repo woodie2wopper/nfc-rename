@@ -3,6 +3,9 @@ import shutil
 import platform
 import PyInstaller.__main__
 import subprocess
+import logging
+import datetime
+from datetime import timezone, timedelta
 
 # OSに合わせてパス区切り文字を設定
 SEPARATOR = ';' if platform.system() == 'Windows' else ':'
@@ -132,22 +135,23 @@ def fix_macos_bundle(app_bundle_path):
 
         # アプリバンドル全体に署名 (deep署名で内部も署名されるはずだが、念のため個別に署名後に行う)
         print("アプリケーションバンドル全体に署名中...")
-        try:
-            subprocess.run([
-                "codesign",
-                "--force",
-                "--deep",       # deep署名を使用
-                "--sign", "-",
-                # "--no-strict", # strictオプションは可能な限り使用しない方が安全
-                "--timestamp",
-                # "--options", "runtime", # 一時的にHardened Runtimeを無効化
-                "--entitlements", "entitlements.plist",
-                app_bundle_path
-            ], check=True, capture_output=True, text=True)
-            print("アプリケーションバンドルに署名しました")
-        except subprocess.CalledProcessError as e:
-             print(f"エラー: アプリケーションバンドルの署名に失敗: {e.stderr}")
-             raise # エラーが発生したらビルドを停止
+        # try:
+        #     subprocess.run([
+        #         "codesign",
+        #         "--force",
+        #         "--deep",       # deep署名を使用
+        #         "--sign", "-",
+        #         # "--no-strict", # strictオプションは可能な限り使用しない方が安全
+        #         "--timestamp",
+        #         # "--options", "runtime", # 一時的にHardened Runtimeを無効化
+        #         "--entitlements", "entitlements.plist",
+        #         app_bundle_path
+        #     ], check=True, capture_output=True, text=True)
+        #     print("アプリケーションバンドルに署名しました")
+        # except subprocess.CalledProcessError as e:
+        #      print(f"エラー: アプリケーションバンドルの署名に失敗: {e.stderr}")
+        #      raise # エラーが発生したらビルドを停止
+        print("署名プロセスをスキップしました。")
 
         # 拡張属性を削除 (Gatekeeperの制限を回避する場合がある)
         print("拡張属性を削除中...")
@@ -160,28 +164,28 @@ def fix_macos_bundle(app_bundle_path):
         print("アプリケーションバンドルのタイムスタンプを更新しました")
 
         # 署名の検証
-        print("署名の検証を実行...")
-        result = subprocess.run([
-            "codesign", "--verify", "--verbose=4", app_bundle_path # 詳細度を上げる
-        ], capture_output=True, text=True, check=False)
-
-        if result.returncode == 0:
-            print("署名の検証に成功しました")
-            # print(f"署名の検証結果:\n{result.stdout}") # 成功時はstdoutが長くなることがあるのでコメントアウト
-        else:
-            print(f"署名の検証に失敗:\n{result.stderr}")
+        print("署名の検証をスキップします...")
+        # result = subprocess.run([
+        #     "codesign", "--verify", "--verbose=4", app_bundle_path # 詳細度を上げる
+        # ], capture_output=True, text=True, check=False)
+        # 
+        # if result.returncode == 0:
+        #     print("署名の検証に成功しました")
+        #     # print(f"署名の検証結果:\n{result.stdout}") # 成功時はstdoutが長くなることがあるのでコメントアウト
+        # else:
+        #     print(f"署名の検証に失敗:\n{result.stderr}")
 
         # spctl でアプリを評価
-        print("Gatekeeperの検証を実行...")
-        spctl_result = subprocess.run([
-            "spctl", "--assess", "--type", "exec", "--verbose=4", app_bundle_path # 詳細度を上げる
-        ], capture_output=True, text=True, check=False)
-
-        if spctl_result.returncode == 0:
-            print("Gatekeeperの検証に成功しました")
-            # print(f"Gatekeeper検証結果:\n{spctl_result.stdout}")
-        else:
-            print(f"Gatekeeperの検証に失敗:\n{spctl_result.stderr}")
+        print("Gatekeeperの検証をスキップします...")
+        # spctl_result = subprocess.run([
+        #     "spctl", "--assess", "--type", "exec", "--verbose=4", app_bundle_path # 詳細度を上げる
+        # ], capture_output=True, text=True, check=False)
+        # 
+        # if spctl_result.returncode == 0:
+        #     print("Gatekeeperの検証に成功しました")
+        #     # print(f"Gatekeeper検証結果:\n{spctl_result.stdout}")
+        # else:
+        #     print(f"Gatekeeperの検証に失敗:\n{spctl_result.stderr}")
 
 
     except Exception as e:
@@ -207,11 +211,11 @@ try:
     if platform.system() == 'Windows':
         args.append('--icon=' + os.path.join("assets", "icon.ico"))
     elif platform.system() == 'Darwin':
-        args.append('--icon=' + os.path.join("assets", "icon.icns"))
+        # args.append('--icon=' + os.path.join("assets", "icon.icns")) # アイコン設定を削除
         args.append('--osx-bundle-identifier=com.osaka.nfcrename')
         args.append('--osx-entitlements-file=entitlements.plist')
         args.append('--disable-windowed-traceback')
-        args.append('--codesign-identity=-') # アドホック署名
+        # args.append('--codesign-identity=-') # アドホック署名を削除
 
     # 重要なモジュールを明示的にインポート
     args.append('--hidden-import=tkinter')

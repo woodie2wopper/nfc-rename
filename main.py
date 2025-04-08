@@ -40,21 +40,20 @@ if not os.path.exists(log_dir):
 
 # ログの設定
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # INFOからDEBUGに変更してより詳細なログを取得
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     filename=log_file,
     filemode='a'
 )
 
-
 # 標準出力と標準エラーをリダイレクト
-#sys.stdout = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO)
-#sys.stderr = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR)
-
+sys.stdout = StreamToLogger(logging.getLogger('STDOUT'), logging.INFO)
+sys.stderr = StreamToLogger(logging.getLogger('STDERR'), logging.ERROR)
 
 # ログのテスト
 logging.info('ログファイルスタート')
+logging.debug('デバッグモードで実行中')
 
 audio_extensions = ['.wav','.mp3']
 #audio_extensions = ['.wav','.mp3']
@@ -325,10 +324,12 @@ def get_duration_of_sound(file):
 
 
 def main(page: ft.Page):
+    logging.debug('main関数が呼び出されました')
     page.title="nfc-rename"
     page.window_width=800
     page.window_height=1000
     page.scroll=True
+    logging.debug('ページ設定完了')
 
     # flet関連
     status_rename_result = ft.TextField(
@@ -1266,8 +1267,16 @@ def main(page: ft.Page):
 
     def on_close(e):
         logging.info('アプリケーションが正常に終了しました。')
+        logging.debug('on_close イベントハンドラが呼び出されました')
 
     page.on_close = on_close
+    logging.debug('ページの初期化が完了しました')
 
 
-ft.app(target=main)
+try:
+    logging.debug('アプリケーション起動開始')
+    ft.app(target=main, view=ft.AppView.DESKTOP)
+    logging.debug('アプリケーション正常終了')
+except Exception as e:
+    logging.error(f'アプリケーション実行中にエラーが発生: {str(e)}')
+    logging.exception("詳細なスタックトレース:")

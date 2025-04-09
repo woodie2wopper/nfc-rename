@@ -109,6 +109,40 @@ def set_ffmpeg_path():
     else:
         raise EnvironmentError('サポートされていないOSです。')
 
+def normalize_site_name(site_name):
+    """
+    サイト名に含まれる半角カタカナを全角に変換し、ファイル名に使用できない文字を除去または置換する関数
+    """
+    if not site_name:
+        return site_name
+    
+    # 半角カタカナを全角に変換
+    # 半角カタカナは Unicode の U+FF61-U+FF9F 範囲にある
+    converted = ""
+    for char in site_name:
+        # 半角カタカナかどうかを判定（Unicode範囲 U+FF61-U+FF9F）
+        if 0xFF61 <= ord(char) <= 0xFF9F:
+            # 半角カタカナを全角に変換
+            converted += unicodedata.normalize('NFKC', char)
+        else:
+            converted += char
+    
+    # ファイル名に使用できない文字を置換
+    # Windows の禁止文字: \ / : * ? " < > |
+    # macOS/Linux の禁止文字: /
+    safe_name = converted
+    for char in r'\/:*?"<>|':
+        if char in safe_name:
+            # スラッシュやバックスラッシュはハイフンに置換
+            if char in r'\/':
+                safe_name = safe_name.replace(char, '-')
+            # その他の禁止文字はアンダースコアに置換
+            else:
+                safe_name = safe_name.replace(char, '_')
+    
+    # NFC 正規化を適用
+    return unicodedata.normalize('NFC', safe_name)
+
 ffmpeg_path = set_ffmpeg_path()
 ffmpeg_command = os.path.join(ffmpeg_path, "ffmpeg.exe")
 ffprobe_command = os.path.join(ffmpeg_path, "ffprobe.exe")
@@ -216,9 +250,11 @@ def convert_epoch_to_666(start_epoch, stop_epoch):
     return start_66 + stop_x6
 
 
-def get_666(filename,start_epoch,stop_epoch,name_site_str):
-    body_666 = convert_epoch_to_666(start_epoch,stop_epoch)
-    new_filename = f'{body_666}_{name_site_str}_{filename}'
+def get_666(filename, start_epoch, stop_epoch, name_site_str):
+    body_666 = convert_epoch_to_666(start_epoch, stop_epoch)
+    # サイト名を含むファイル名を生成する前に正規化を適用
+    safe_site_name = normalize_site_name(name_site_str)
+    new_filename = f'{body_666}_{safe_site_name}_{filename}'
     return new_filename
 
         
@@ -351,8 +387,13 @@ def main(page: ft.Page):
     global name_site
     cached_site_name = page.client_storage.get("cached_site_name")
     if cached_site_name:
-        name_site = cached_site_name
-        logging.info(f"キャッシュからサイト名を読み込みました: {name_site}")
+        # キャッシュから読み込んだサイト名も正規化
+        name_site = normalize_site_name(cached_site_name)
+        # 正規化後の名前が元の名前と異なる場合、ログに記録
+        if name_site != cached_site_name:
+            logging.info(f"キャッシュのサイト名を正規化しました: {cached_site_name} → {name_site}")
+        else:
+            logging.info(f"キャッシュからサイト名を読み込みました: {name_site}")
     else:
         name_site = "" # キャッシュがない場合は空文字に初期化
     # -------------------------------------------
@@ -453,13 +494,25 @@ def main(page: ft.Page):
 
     def changed_name_site(e):
         global name_site
-        name_site=e.control.value
+        # 入力されたサイト名を正規化
+        original_name = e.control.value
+        normalized_name = normalize_site_name(original_name)
+        
+        # 正規化後の名前が元の名前と異なる場合、ユーザーに通知
+        if normalized_name != original_name:
+            logging.info(f"サイト名を正規化しました: {original_name} → {normalized_name}")
+            # UI上のテキストフィールドを更新（正規化された名前に）
+            e.control.value = normalized_name
+            e.control.update()
+        
+        name_site = normalized_name
         info_name_site.value = name_site
         info_name_site.update()
-        # --- client_storageにサイト名を保存 ---
+        
+        # client_storageにサイト名を保存
         page.client_storage.set("cached_site_name", name_site)
         logging.info(f"サイト名をキャッシュに保存しました: {name_site}")
-        # ------------------------------------
+        
         print(f'name_site:{name_site}')
 
 

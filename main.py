@@ -1296,10 +1296,31 @@ def main(page: ft.Page):
                             # 出力ファイル名を生成（元のファイル名の情報を保持）
                             start_time_str = current_time.strftime('%y%m%d_%H%M%S')
                             end_time_str = next_time.strftime('%H%M%S')
-                            # 元のファイル名からサイト名を抽出
+                            
+                            # 元のファイル名から情報を抽出
                             original_filename = os.path.basename(file_path)
-                            site_name = original_filename.split('_')[-2] if len(original_filename.split('_')) >= 2 else ""
-                            output_filename = f"{start_time_str}_{end_time_str}_{site_name}.WAV"
+                            
+                            # 666形式のパターンに一致する部分を検索
+                            pattern_match = re.search(pattern, original_filename)
+                            if pattern_match:
+                                # パターンに一致した後の部分を抽出（サイト名とオリジナルファイル名）
+                                match_end = pattern_match.end()
+                                remaining_parts = original_filename[match_end:]
+                                # 先頭の "_" があれば削除
+                                if remaining_parts.startswith("_"):
+                                    remaining_parts = remaining_parts[1:]
+                                
+                                # 出力ファイル名を組み立て
+                                output_filename = f"{start_time_str}_{end_time_str}_{remaining_parts}"
+                                # 拡張子が重複しないように調整
+                                if not output_filename.upper().endswith(".WAV"):
+                                    output_filename = os.path.splitext(output_filename)[0] + ".WAV"
+                            else:
+                                # 666形式でない場合はシンプルな命名
+                                filename_without_ext = os.path.splitext(original_filename)[0]
+                                output_filename = f"{start_time_str}_{end_time_str}_{filename_without_ext}.WAV"
+                            
+                            logging.info(f"生成された出力ファイル名: {output_filename}")
                             output_path = os.path.join(os.path.dirname(file_path), output_filename)
                             
                             # 分割の開始オフセットと継続時間を計算

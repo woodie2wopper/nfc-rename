@@ -204,6 +204,7 @@ msg_rename="""\
 フォルダ内のWAVファイル名を666+形式にリネームします。①〜⑤を順に設定してください。
 【注意】
 　- ICレコーダを変更したら、ディレクトリを選び直してください。
+　- サイト名には使えない文字があります（半角カタカナ、"/", "\"などのディレクトリを表す記号）
 　- ⭕️はファイルスタンプが同じ同一音源でファイル名を降順にリネームします。
 　- ✅はリネーム済みでリネームしません。
 """
@@ -336,7 +337,7 @@ def get_start_stop_from_666(filename):
         start_epoch = int(start_dt.timestamp())
         stop_epoch = int(stop_dt.timestamp())
         if stop_epoch < start_epoch:
-            stop_epoch += 12 * 60 * 60  # 12時間を秒数で足す
+            stop_epoch += 24 * 60 * 60  # 12時間ではなく24時間（86400秒）を足す
         return start_epoch, stop_epoch
     else:
         raise ValueError(" ファイル名が666形式ではありません。")
@@ -1208,25 +1209,79 @@ def main(page: ft.Page):
                         msg.append(error_msg)
                         continue
                     
+                    # ffprobeでファイルの詳細情報を取得
+                    if os.path.exists(ffprobe_command):
+                        try:
+                            probe_cmd = [
+                                ffprobe_command,
+                                "-v", "error",
+                                "-show_format",
+                                "-show_streams",
+                                "-of", "json",
+                                file_path
+                            ]
+                            logging.info(f"ffprobeコマンド実行: {' '.join(probe_cmd)}")
+                            probe_result = subprocess.run(
+                                probe_cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                encoding='utf-8',
+                                errors='replace'
+                            )
+                            if probe_result.returncode == 0:
+                                probe_data = json.loads(probe_result.stdout)
+                                logging.info(f"ffprobe結果: {json.dumps(probe_data, indent=2, ensure_ascii=False)}")
+                                
+                                # ファイルの実際の長さを取得
+                                if "format" in probe_data and "duration" in probe_data["format"]:
+                                    actual_duration = float(probe_data["format"]["duration"])
+                                    logging.info(f"実際のファイル長: {actual_duration}秒")
+                            else:
+                                logging.error(f"ffprobe実行エラー: {probe_result.stderr}")
+                        except Exception as e:
+                            logging.error(f"ffprobe処理中のエラー: {str(e)}")
+                    
                     # ファイル名から開始時刻と終了時刻を取得
                     filename = os.path.basename(file_path)
                     logging.info(f'ファイル処理開始: {filename} ({file_index}/{total_files})')
                     info_split_result.value = f"ファイル処理中: {filename} ({file_index}/{total_files})"
                     info_split_result.update()
                     
+                    # 666フォーマットからエポック時間を取得
                     start_epoch, stop_epoch = get_start_stop_from_666(filename)
+                    epoch_duration = stop_epoch - start_epoch
+                    logging.info(f"666形式から計算したファイル長: {epoch_duration}秒")
                     
                     # 開始時刻と終了時刻をdatetimeオブジェクトに変換
                     start_dt = datetime.datetime.fromtimestamp(start_epoch)
                     end_dt = datetime.datetime.fromtimestamp(stop_epoch)
                     
+                    # 開始・終了時刻のログ出力（デバッグ用）
+                    logging.info(f"開始時刻: {start_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                    logging.info(f"終了時刻: {end_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+                    
                     # 総分割数を計算
                     total_duration = (end_dt - start_dt).total_seconds()
                     total_segments = math.ceil(total_duration / 3600)
+                    logging.info(f"計算された合計時間: {total_duration}秒 ({total_duration/3600:.2f}時間)")
+                    logging.info(f"予定分割数: {total_segments}")
+                    
+                    # 分割処理が不要な場合（1時間未満）
+                    if total_duration <= 3600:
+                        logging.info(f"ファイル {filename} は1時間未満（{total_duration}秒）のため分割不要")
+                        msg.append(f"ファイル {filename} は1時間未満のため分割不要")
+                        continue
                     
                     # 1時間ごとの区切り時刻を生成
                     current_time = start_dt
                     segment_count = 0
+                    
+                    # 出力ディレクトリの確認
+                    output_dir = os.path.dirname(file_path)
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+                        logging.info(f"出力ディレクトリを作成: {output_dir}")
+                    
                     while current_time < end_dt:
                         try:
                             # 次の区切り時刻を計算（1時間後、または終了時刻の早い方）
@@ -1269,7 +1324,8 @@ def main(page: ft.Page):
                                 break
                             
                             # ffmpegを実行
-                            logging.debug(f'ffmpegコマンド実行: {" ".join(cmd)}')
+                            logging.info(f'ffmpegコマンド実行: {" ".join(cmd)}')
+                            logging.info(f'パラメータ詳細: 開始位置={start_offset}秒, 長さ={duration}秒')
                             try:
                                 if platform.system() == 'Windows':
                                     # Windowsの場合、CREATE_NO_WINDOWフラグを使用
@@ -1303,16 +1359,42 @@ def main(page: ft.Page):
                                     return
                                 
                                 # コマンドの実行結果をログに記録
-                                logging.debug(f'ffmpegコマンドの標準出力: {stdout}')
+                                logging.info(f'ffmpegコマンドの標準出力: {stdout}')
                                 if stderr:
-                                    logging.debug(f'ffmpegコマンドの標準エラー出力: {stderr}')
+                                    logging.info(f'ffmpegコマンドの標準エラー出力: {stderr}')
                                 
                                 if process.returncode == 0:
-                                    success_msg = f"分割成功: {output_filename}"
-                                    logging.info(success_msg)
-                                    msg.append(success_msg)
-                                    info_split_result.value = f"{progress_msg}\n{success_msg}"
-                                    info_split_result.update()
+                                    # 出力ファイルの存在確認
+                                    if os.path.exists(output_path):
+                                        # 出力ファイルの長さを確認
+                                        try:
+                                            file_size = os.path.getsize(output_path)
+                                            logging.info(f"分割後のファイルサイズ: {file_size} bytes")
+                                            
+                                            # WAVファイルの場合、実際の長さを取得
+                                            if output_path.lower().endswith('.wav'):
+                                                try:
+                                                    with wave.open(output_path, 'rb') as wav_file:
+                                                        frames = wav_file.getnframes()
+                                                        rate = wav_file.getframerate()
+                                                        output_duration = frames / float(rate)
+                                                        logging.info(f"分割後のファイル長: {output_duration}秒")
+                                                except Exception as e:
+                                                    logging.warning(f"WAVファイル長の取得に失敗: {str(e)}")
+                                        except Exception as e:
+                                            logging.warning(f"ファイルサイズの取得に失敗: {str(e)}")
+                                        
+                                        success_msg = f"分割成功: {output_filename}"
+                                        logging.info(success_msg)
+                                        msg.append(success_msg)
+                                        info_split_result.value = f"{progress_msg}\n{success_msg}"
+                                        info_split_result.update()
+                                    else:
+                                        error_msg = f"分割ファイルが生成されませんでした: {output_path}"
+                                        logging.error(error_msg)
+                                        msg.append(error_msg)
+                                        info_split_result.value = f"{progress_msg}\n{error_msg}"
+                                        info_split_result.update()
                                 else:
                                     error_msg = f"分割失敗: {output_filename}\nエラー: {stderr}"
                                     logging.error(error_msg)
@@ -1568,7 +1650,7 @@ def main(page: ft.Page):
                     margin=20,
                     content=ft.Column([
                         ft.Text("音声ファイルを1時間ごとに分割します。"),
-                        ft.Text("分割は0分0秒ちょうどで行います。"),
+                        # ft.Text("分割は0分0秒ちょうどで行います。"),
                         ft.Row([
                             ft.ElevatedButton(
                                 "ファイル選択",

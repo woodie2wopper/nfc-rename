@@ -43,7 +43,7 @@ if not os.path.exists(log_dir):
 
 # ログの設定
 logging.basicConfig(
-    level=logging.DEBUG,  # INFOからDEBUGに変更してより詳細なログを取得
+    level=logging.INFO,  # INFOレベルでログを記録
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     filename=log_file,
@@ -676,6 +676,7 @@ def main(page: ft.Page):
 
     def execute_rename(metadata_group, output_dir_path,is_start):
         msg = []
+        renamed_files = []  # リネームしたファイルのパスを記録するリスト
         for mtime, file in metadata_group.items():
             org_file_path = file['file_path']
             new_filename = get_renamed_sound(file,is_start)
@@ -683,7 +684,8 @@ def main(page: ft.Page):
             update_rename_result(f'\n rename実行：{org_file_path} → {new_file_path}')
             msg.extend(rename(org_file_path, new_file_path))
             msg.extend(remtime(new_file_path,mtime))
-        return msg
+            renamed_files.append(new_file_path)
+        return msg, renamed_files
 
 
     def update_info_modify_mtime_files(e: ft.FilePickerResultEvent):
@@ -850,7 +852,8 @@ def main(page: ft.Page):
     # リネーム実行ボタン：ICレコーダ毎にファイル名を変える
     def btn_rename(_):
         global dir_output
-        msg =[]
+        msg = []
+        renamed_files = []  # リネームしたファイルのパスを記録するリスト
 
         if not is_exist_dir_path(dir_sounds):
             msg.append(f"音声フォルダが選択されていません")
@@ -873,22 +876,142 @@ def main(page: ft.Page):
                             new_filename = get_renamed_sound(files[0],is_start)
                             new_file_path = os.path.join(dir_output, new_filename)
                             update_rename_result(f'\n rename実行：{org_file_path} → {new_file_path}')
-                            msg.extend(rename(from_file_path=org_file_path,to_file_path=new_file_path))
+                            try:
+                                # リネーム処理を実行
+                                result = rename(from_file_path=org_file_path, to_file_path=new_file_path)
+                                
+                                # リネーム成功したらリストに追加
+                                if os.path.exists(new_file_path):
+                                    renamed_files.append(new_file_path)
+                                    logging.info(f"renamed_files に追加しました: {new_file_path}")
+                                
+                                # 返り値がリストの場合、文字列のリストに変換
+                                if isinstance(result, list):
+                                    for item in result:
+                                        if item:  # 空でない場合のみ追加
+                                            msg.append(str(item))
+                                else:
+                                    msg.append(str(result))
+                            except Exception as e:
+                                logging.error(f"リネーム中にエラーが発生しました: {str(e)}")
+                                msg.append(f"エラー: {str(e)}")
                             
+                            # 同一録音のマージ機能は、無効化して開発終了とする
+                            #if cb_merge_WAV:
+                            #    msg.extend(merge_and_rename_audio_files(metadata_group, output_file=new_file_path))
                         else: # 同一録音（グループファイル）の場合
                             if not checkbox_merge.value: # マージのチェックボックスしない（個別に設定）
                                 print(f'ICR={selected_ICR},Group=True,is_start={is_start}')
                                 # ここで newed_metadata を辞書に変換する必要がある
                                 newed_metadata = set_each_mtime(metadata_in_same_groups=files,is_start=is_start)
                                 newed_metadata_dict = {file['mtime']: file for file in newed_metadata}
-                                msg.extend(execute_rename(newed_metadata_dict, output_dir_path=dir_output, is_start=is_start))
+                                result = execute_rename(newed_metadata_dict, output_dir_path=dir_output, is_start=is_start)
+                                # 返り値がリストの場合、文字列のリストに変換
+                                if isinstance(result, list):
+                                    for item in result:
+                                        if item:  # 空でない場合のみ追加
+                                            msg.append(str(item))
+                                else:
+                                    msg.append(str(result))
                             else: # 同一録音を一つにマージする
                                 merge_and_rename_audio_files(metadata_group, output_file=new_file_path)
-                        str = '\n'.join(msg)
-                        print(f'btn_rename:{str}')
+                        
+                        # リストの内容を文字列に変換（デバッグ用）
+                        debug_msg = []
+                        for item in msg:
+                            debug_msg.append(str(item))
+                        debug_str = '\n'.join(debug_msg)
+                        print(f'btn_rename:{debug_str}')
                 except ValueError as e:
                     msg.append(f"ファイル名変更中にエラーが発生しました：{e}")
-        status_rename_result.value +=  "\nリネーム終了\n" + '\n'.join(msg)
+        
+        # リネーム処理完了後に文字コード検証
+        if renamed_files:
+            logging.info(f"--- ファイル名文字コード検証の開始 --- 検証対象: {len(renamed_files)}件")
+            for rf in renamed_files:
+                logging.debug(f"検証対象ファイル: {rf}")
+            try:
+                # 内部で文字コード検証を行う
+                results = []
+                issues = []
+                
+                for file_path in renamed_files:
+                    if os.path.exists(file_path):
+                        logging.debug(f"検証中: {file_path}")
+                        try:
+                            # 以下はvalidate_filename_encodingの処理を直接実装
+                            filename = os.path.basename(file_path)
+                            
+                            # 1. NFC正規化チェック
+                            normalized = unicodedata.normalize('NFC', filename)
+                            is_nfc = (normalized == filename)
+                            
+                            # 2. UTF-8としてエンコード・デコード可能か確認
+                            try:
+                                encoded = filename.encode('utf-8')
+                                decoded = encoded.decode('utf-8')
+                                utf8_compatible = (decoded == filename)
+                            except UnicodeError:
+                                utf8_compatible = False
+                            
+                            # 3. OS固有の問題チェック
+                            os_compatible = True
+                            if platform.system() == 'Windows':
+                                # Windowsの禁止文字チェック
+                                if re.search(r'[\\/:*?"<>|]', filename):
+                                    os_compatible = False
+                            elif platform.system() in ['Darwin', 'Linux']:
+                                # macOS/Linuxでの禁止文字チェック
+                                if '/' in filename:
+                                    os_compatible = False
+                            
+                            result = {
+                                'is_nfc': is_nfc,
+                                'utf8_compatible': utf8_compatible,
+                                'os_compatible': os_compatible,
+                                'filename': filename,
+                                'path': file_path
+                            }
+                            
+                            results.append(result)
+                            
+                            # 問題があれば記録
+                            if not (result['is_nfc'] and result['utf8_compatible'] and result['os_compatible']):
+                                issue = f"警告: {result['filename']} - "
+                                if not result['is_nfc']:
+                                    issue += "Unicode NFC形式でない "
+                                if not result['utf8_compatible']:
+                                    issue += "UTF-8互換でない "
+                                if not result['os_compatible']:
+                                    issue += f"{platform.system()}で使用できない文字を含む "
+                                issues.append(issue)
+                                logging.warning(f"問題検出: {issue}")
+                            else:
+                                logging.debug(f"問題なし: {file_path}")
+                        except Exception as e:
+                            logging.error(f"検証中の個別エラー: {str(e)}")
+                    else:
+                        logging.warning(f"ファイルが存在しません: {file_path}")
+                
+                if issues:
+                    for issue in issues:
+                        logging.warning(issue)
+                    logging.info(f"{len(issues)}件の問題を検出しました")
+                else:
+                    logging.info("すべてのファイル名はUTF-8+Unicode NFC形式で問題ありません")
+            except Exception as e:
+                logging.error(f"文字コード検証中にエラーが発生しました: {str(e)}")
+                import traceback
+                logging.error(traceback.format_exc())
+            logging.info("--- ファイル名文字コード検証の終了 ---")
+        
+        # msgリストの各要素が確実に文字列であることを確認
+        str_msg = []
+        for item in msg:
+            if item is not None:
+                str_msg.append(str(item))
+            
+        status_rename_result.value += "\nリネーム終了\n" + '\n'.join(str_msg)
         status_rename_result.update()
 
 
@@ -1557,3 +1680,78 @@ def run_command(cmd, input_data=None):
     
     stdout, stderr = process.communicate(input=input_data)
     return process.returncode, stdout, stderr
+
+def validate_filename_encoding(file_path):
+    """
+    ファイル名のエンコーディングと正規化を検証する関数
+    """
+    filename = os.path.basename(file_path)
+    dirname = os.path.dirname(file_path)
+    
+    # 1. NFC正規化チェック
+    normalized = unicodedata.normalize('NFC', filename)
+    is_nfc = (normalized == filename)
+    
+    # 2. UTF-8としてエンコード・デコード可能か確認
+    try:
+        encoded = filename.encode('utf-8')
+        decoded = encoded.decode('utf-8')
+        utf8_compatible = (decoded == filename)
+    except UnicodeError:
+        utf8_compatible = False
+    
+    # 3. OS固有の問題チェック
+    os_compatible = True
+    if platform.system() == 'Windows':
+        # Windowsの禁止文字チェック
+        if re.search(r'[\\/:*?"<>|]', filename):
+            os_compatible = False
+    elif platform.system() in ['Darwin', 'Linux']:
+        # macOS/Linuxでの禁止文字チェック
+        if '/' in filename:
+            os_compatible = False
+    
+    return {
+        'is_nfc': is_nfc,
+        'utf8_compatible': utf8_compatible,
+        'os_compatible': os_compatible,
+        'filename': filename,
+        'path': file_path
+    }
+
+def check_renamed_files(renamed_files):
+    """
+    リネームされたファイル群の文字コードを検証する
+    """
+    logging.info(f"check_renamed_files: {len(renamed_files)}件のファイルを検証します")
+    results = []
+    issues = []
+    
+    for file_path in renamed_files:
+        if os.path.exists(file_path):
+            logging.debug(f"check_renamed_files: 検証中: {file_path}")
+            result = validate_filename_encoding(file_path)
+            results.append(result)
+            
+            # 問題があれば記録
+            if not (result['is_nfc'] and result['utf8_compatible'] and result['os_compatible']):
+                issue = f"警告: {result['filename']} - "
+                if not result['is_nfc']:
+                    issue += "Unicode NFC形式でない "
+                if not result['utf8_compatible']:
+                    issue += "UTF-8互換でない "
+                if not result['os_compatible']:
+                    issue += f"{platform.system()}で使用できない文字を含む "
+                issues.append(issue)
+                logging.warning(f"check_renamed_files: 問題検出: {issue}")
+            else:
+                logging.debug(f"check_renamed_files: 問題なし: {file_path}")
+        else:
+            logging.warning(f"check_renamed_files: ファイルが存在しません: {file_path}")
+    
+    if issues:
+        logging.info(f"check_renamed_files: {len(issues)}件の問題を検出しました")
+    else:
+        logging.info("check_renamed_files: すべてのファイル名に問題はありません")
+    
+    return results, issues

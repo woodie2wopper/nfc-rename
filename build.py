@@ -209,7 +209,7 @@ try:
 
     # OS別の設定
     if platform.system() == 'Windows':
-        args.append('--icon=' + os.path.join("assets", "icon.ico"))
+        args.append('--icon=' + os.path.join("assets", "new_icon", "nockun_icon.ico"))
     elif platform.system() == 'Darwin':
         # args.append('--icon=' + os.path.join("assets", "icon.icns")) # アイコン設定を削除
         args.append('--osx-bundle-identifier=com.osaka.nfcrename')

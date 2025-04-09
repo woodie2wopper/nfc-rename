@@ -231,7 +231,7 @@ try:
     PyInstaller.__main__.run(args)
 
     # vendorsディレクトリをコピー (ビルド後)
-    # copy_vendors() # PyInstallerの--add-dataで処理されるため不要かも？確認必要
+    copy_vendors() # PyInstallerの--add-dataで処理されるため不要かも？確認必要
 
     # アセットファイルをコピーしていた箇所を削除 (fix_macos_bundleでアイコンコピーを行う)
 

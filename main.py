@@ -92,15 +92,52 @@ def set_ffmpeg_path():
     :return: ffmpegのパスを文字列で返す
     """
     os_name = get_os()
+    
     # 実行ファイルのディレクトリを取得
     if getattr(sys, 'frozen', False):
         # PyInstallerでビルドされた場合
+        if hasattr(sys, '_MEIPASS'):
+            # PyInstallerの一時ディレクトリパスを使用
+            base_path = sys._MEIPASS
+        else:
+            # 実行ファイルの親ディレクトリ
+            base_path = os.path.dirname(sys.executable)
+            
+        # 様々な可能性のあるパスを確認
+        possible_paths = [
+            os.path.join(base_path, 'vendors', 'for_Win' if os_name == 'Windows' else 'for_Mac'),
+            os.path.join(base_path, '_internal', 'vendors', 'for_Win' if os_name == 'Windows' else 'for_Mac'),
+            os.path.join(os.path.dirname(base_path), 'vendors', 'for_Win' if os_name == 'Windows' else 'for_Mac')
+        ]
+        
+        # 実際に存在するパスを使用
+        for path in possible_paths:
+            ffmpeg_test_path = os.path.join(path, 'ffmpeg.exe' if os_name == 'Windows' else 'ffmpeg')
+            if os.path.exists(ffmpeg_test_path):
+                logging.info(f"ffmpegが見つかりました: {ffmpeg_test_path}")
+                return path
+                
+        # ログに詳細なパス情報を出力
+        logging.error(f"ffmpegが見つかりませんでした。検索したパス: {possible_paths}")
+        
+        # デバッグのためにディレクトリ構造を出力
+        application_dir = os.path.dirname(sys.executable)
+        logging.info(f"アプリケーションディレクトリ: {application_dir}")
+        if os.path.exists(application_dir):
+            for root, dirs, files in os.walk(application_dir):
+                for d in dirs:
+                    logging.info(f"ディレクトリ: {os.path.join(root, d)}")
+                for f in files:
+                    if f in ['ffmpeg.exe', 'ffmpeg']:
+                        logging.info(f"***ffmpeg見つかりました***: {os.path.join(root, f)}")
+        
+        # デフォルトのパスを返す
         application_path = os.path.dirname(sys.executable)
     else:
         # 通常のPython実行の場合
         application_path = os.path.dirname(os.path.abspath(__file__))
     
-    print("アプリケーションパス:", application_path)
+    logging.info(f"アプリケーションパス: {application_path}")
     
     if os_name == 'Darwin':  # MacOSXの場合
         return os.path.join(application_path, 'vendors', 'for_Mac')

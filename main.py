@@ -181,9 +181,15 @@ def normalize_site_name(site_name):
     return unicodedata.normalize('NFC', safe_name)
 
 ffmpeg_path = set_ffmpeg_path()
-ffmpeg_command = os.path.join(ffmpeg_path, "ffmpeg.exe")
-ffprobe_command = os.path.join(ffmpeg_path, "ffprobe.exe")
-ffplay_command = os.path.join(ffmpeg_path, "ffplay.exe")
+
+# OSに応じてコマンド名を決定
+ffmpeg_exe = "ffmpeg.exe" if platform.system() == "Windows" else "ffmpeg"
+ffprobe_exe = "ffprobe.exe" if platform.system() == "Windows" else "ffprobe"
+ffplay_exe = "ffplay.exe" if platform.system() == "Windows" else "ffplay"
+
+ffmpeg_command = os.path.join(ffmpeg_path, ffmpeg_exe)
+ffprobe_command = os.path.join(ffmpeg_path, ffprobe_exe)
+ffplay_command = os.path.join(ffmpeg_path, ffplay_exe)
 
 # ffmpegのパスをログに記録
 logging.info(f"ffmpeg_path: {ffmpeg_path}")

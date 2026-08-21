@@ -12,6 +12,9 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,8 +59,12 @@ jobs:
           }
           Get-ChildItem $dest | Format-Table Name, Length
 
+      - name: Check build imports
+        run: |
+          python -c "import PyInstaller, flet, ffmpeg, PIL; print('PyInstaller', PyInstaller.__version__); print('imports ok')"
+
       - name: Build with PyInstaller
-        run: python build.py
+        run: python -u build.py
 
       - name: Verify Windows payload
         shell: pwsh

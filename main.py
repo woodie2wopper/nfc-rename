@@ -71,7 +71,7 @@ audio_extensions = ['.wav','.mp3']
 dict_ICR = {
     'dummy_start': 'START',
     'DM-750': 'START',
-    'LS-7': 'START',
+    'LS-7': 'STOP',
     'DR-05': 'STOP',
     'dummy_stop': 'STOP'
 }
@@ -1709,7 +1709,7 @@ def main(page: ft.Page):
                             size=20,
                             ),
                         ft.Text(
-                            "version:0.9 (2025-04-07)",
+                            "version:0.10 (2026-08-21)",
                             size=12,
                             ),
                         ft.Text(
@@ -1725,7 +1725,7 @@ def main(page: ft.Page):
                         ft.Text("【ヒント】"),
                         ft.Text(" - 同一録音の再設定は、オリジナルファイル名を複数選択し、同じmtimeを設定してください。これは同じmtimeを持ち、連続するファイル名の場合に有効です。"),
                         ft.Text(" - 作成日(Birthday)は変更しません。"),
-                        ft.Text(" - Olympus: DM-750とLS-7は2GBを超えるファイルが自動分割されます。このとき生成されたファイルはすべて同じタイムスタンプ（録音開始時刻のmtime）を持ちます。そのため、同じ録音ファイルを同一グループとしファイル名の若い順にファイル名を生成します。なおDR-05(TASCAM）も自動分割されますが、タイムスタンプは録音終了時刻が設定されています。"),
+                        ft.Text(" - Olympus: DM-750は2GBを超えるファイルが自動分割されます。このとき生成されたファイルはすべて同じタイムスタンプ（録音開始時刻のmtime）を持ちます。そのため、同じ録音ファイルを同一グループとしファイル名の若い順にファイル名を生成します。LS-7とDR-05(TASCAM）も自動分割されますが、タイムスタンプは録音終了時刻が設定されています。"),
                         ft.Markdown("詳細はこちら: [GitHub Repository](https://github.com/woodie2wopper/nfc-rename)"),
                     ]),
                 ),

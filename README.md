@@ -59,6 +59,8 @@ NFC-Rename is a desktop application (Mac/Windows) that manages recording file na
 
 これらのツールはZIPファイル内の `vendors/for_Win`（Windows用）または `vendors/for_Mac`（macOS用）ディレクトリに含まれています。アプリケーションが正常に動作するためには、これらのファイルがアプリケーション本体と共に適切に配置されている必要があります。
 
+Windows 用 zip は GitHub Actions の `Build Windows` ワークフローを手動実行すると作成できます。ジョブ内で ffmpeg を取得し、`nfc-rename.exe` と `vendors/for_Win` を含む `nfc-rename-windows.zip` が成果物（artifact）になります。
+
 ## 機能：
 
 - nfc録音調査用にファイルのリネーム、ファイル名の復元、タイムスタンプの設定、音声分割ができます。
@@ -125,10 +127,15 @@ NFC-Rename is a desktop application (Mac/Windows) that manages recording file na
 
 ## ICレコーダーの特性：
 
-- **DM-750**、**LS-7**（オリンパス）：タイムスタンプは録音開始時刻です。2GBを超えると自動分割され、すべての分割ファイルは同じタイムスタンプを持ちます。
+- **DM-750**（オリンパス）：タイムスタンプは録音開始時刻です。2GBを超えると自動分割され、すべての分割ファイルは同じタイムスタンプを持ちます。
+- **LS-7**（オリンパス）：タイムスタンプは録音終了時刻です。
 - **DR-05**（TASCAM）：タイムスタンプは録音終了時刻です。
 
 ## バージョン情報：
+
+- **Ver.0.10 (2026-08-21)**:
+  - LS-7のタイムスタンプ設定を録音開始(START)から録音終了(STOP)に修正
+  - GitHub Actions で ffmpeg 込みの Windows アプリをビルドできるようにした
 
 - **Ver.0.9 (2025-04-15)**:
   - サイト名のキャッシュ機能: 入力したサイト名を次回起動時に自動で読み込み
